@@ -1,0 +1,124 @@
+/* 登录页面布局与样式：居中卡片、表单样式与提示颜色 */
+
+.login-page {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  color: #1c1c1e;
+  background:
+    radial-gradient(1200px 800px at 10% -10%, rgba(255, 183, 197, 0.35) 0%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(1000px 700px at 110% 110%, rgba(126, 190, 255, 0.35) 0%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(135deg, #f6f8ff 0%, #ffffff 40%, #f0f7ff 100%);
+}
+
+.login-canvas {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.login-card {
+  width: 400px;
+  padding: 28px 24px;
+  border-radius: 18px;
+  border: 1px solid rgba(60, 60, 67, 0.29);
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+.login-title {
+  margin: 0 0 20px 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-align: center;
+  color: #111111;
+}
+
+.login-form .form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.login-form label {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(60, 60, 67, 0.8);
+}
+
+.login-form input {
+  padding: 12px 14px;
+  border: 1px solid rgba(60, 60, 67, 0.29);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1c1c1e;
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.login-form input::placeholder {
+  color: rgba(60, 60, 67, 0.45);
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: #0a84ff;
+  box-shadow:
+    0 0 0 3px rgba(10, 132, 255, 0.18),
+    0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+.form-error {
+  margin: 8px 0;
+  color: #e5484d;
+  font-size: 14px;
+}
+
+.form-success {
+  margin: 8px 0;
+  color: #2a9d8f;
+  font-size: 14px;
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0a84ff 0%, #007aff 100%);
+  box-shadow:
+    0 10px 20px rgba(10, 132, 255, 0.24),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  color: #ffffff;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.submit-btn:hover {
+  filter: brightness(1.02);
+  box-shadow:
+    0 14px 28px rgba(10, 132, 255, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+.submit-btn:active {
+  transform: translateY(1px);
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  filter: saturate(90%);
+}
