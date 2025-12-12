@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
 import { fetchCompetitionList, type CompetitionItem } from '../api/competition'
+import { formatDateTimeText } from '../utils/datetime'
 
 const PAGE_SIZE = 10
 
-export default function CompetitionList() {
+type Props = {
+  onSelect?: (item: CompetitionItem) => void
+}
+
+export default function CompetitionList({ onSelect }: Props) {
   const [items, setItems] = useState<CompetitionItem[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -35,6 +40,26 @@ export default function CompetitionList() {
 
   const maxPage = total > 0 ? Math.ceil(total / PAGE_SIZE) : 1
 
+  function getStatusLabel(item: CompetitionItem) {
+    const now = Date.now()
+    const startAt = new Date(item.start_time).getTime()
+    const endAt = new Date(item.end_time).getTime()
+    if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return ''
+    if (now < startAt) return '未开始'
+    if (now >= startAt && now < endAt) return '进行中'
+    return '已结束'
+  }
+
+  function getStatusTone(item: CompetitionItem) {
+    const now = Date.now()
+    const startAt = new Date(item.start_time).getTime()
+    const endAt = new Date(item.end_time).getTime()
+    if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return ''
+    if (now < startAt) return 'upcoming'
+    if (now >= startAt && now < endAt) return 'running'
+    return 'finished'
+  }
+
   return (
     <div className="competition-page">
       <div className="competition-header">
@@ -42,10 +67,12 @@ export default function CompetitionList() {
         <div className="competition-actions">
           <button
             type="button"
+            className="competition-refresh-btn"
             onClick={() => load(page)}
             disabled={loading}
+            aria-label="刷新比赛列表"
           >
-            刷新
+            ↻
           </button>
         </div>
       </div>
@@ -56,28 +83,48 @@ export default function CompetitionList() {
         ) : items.length === 0 ? (
           <div className="competition-empty">暂无比赛</div>
         ) : (
-          <table className="competition-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>名称</th>
-                <th>状态</th>
-                <th>开始时间</th>
-                <th>结束时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.id}</td>
-                  <td>{item.name}</td>
-                  <td>{item.status === 1 ? '已发布' : item.status}</td>
-                  <td>{item.start_time}</td>
-                  <td>{item.end_time}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="competition-card-list">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="competition-card"
+                onClick={() => onSelect?.(item)}
+                style={{ cursor: onSelect ? 'pointer' : 'default' }}
+              >
+                <div className="competition-card-title">{item.name}</div>
+                <div className="competition-card-meta">
+                  <span
+                    className={
+                      'competition-card-status' +
+                      (getStatusTone(item)
+                        ? ' competition-card-status-' + getStatusTone(item)
+                        : '')
+                    }
+                  >
+                    <span className="competition-card-status-dot" />
+                    <span>{getStatusLabel(item)}</span>
+                  </span>
+                  <div className="competition-card-meta-right">
+                    <span className="competition-time">
+                      <span className="competition-time-icon">⏱</span>
+                      <span className="competition-time-label">开始时间</span>
+                      <span className="competition-time-value">
+                        {formatDateTimeText(item.start_time)}
+                      </span>
+                    </span>
+                    <span className="competition-detail-separator" />
+                    <span className="competition-time">
+                      <span className="competition-time-icon">🏁</span>
+                      <span className="competition-time-label">结束时间</span>
+                      <span className="competition-time-value">
+                        {formatDateTimeText(item.end_time)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
       <div className="competition-pagination">

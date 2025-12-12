@@ -1,4 +1,4 @@
-import { getJson } from './http'
+import { getJson, postJson } from './http'
 
 export type CompetitionItem = {
   id: number
@@ -34,3 +34,16 @@ export async function fetchCompetitionList(page: number, pageSize: number) {
   })
 }
 
+export type StartCompetitionResponse = {
+  code: number
+  message: string
+}
+
+export async function startCompetition(competitionId: number) {
+  return postJson<StartCompetitionResponse>(
+    '/api/online-judge-controller?cmd=StartCompetition',
+    {
+      competition_id: competitionId,
+    },
+  )
+}
