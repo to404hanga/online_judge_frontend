@@ -76,3 +76,46 @@ export async function postJson<T>(path: string, body: unknown): Promise<ApiResul
 export function getAuthToken(): string | null {
   return getToken()
 }
+
+export function clearAuthToken() {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+export async function getJson<T>(
+  path: string,
+  query?: Record<string, string | number | boolean | undefined>,
+): Promise<ApiResult<T>> {
+  const search = new URLSearchParams()
+  if (query) {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined) return
+      search.append(key, String(value))
+    })
+  }
+  const queryString = search.toString()
+  const url = API_BASE_URL + path + (queryString ? `?${queryString}` : '')
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
+    mode: 'cors',
+  })
+
+  const headerToken = res.headers.get('X-JWT-Token')
+  if (headerToken) setToken(headerToken)
+
+  let data: T | null = null
+  try {
+    data = (await res.json()) as T
+  } catch {
+    data = null
+  }
+
+  return {
+    ok: res.ok,
+    data,
+    status: res.status,
+    token: headerToken,
+  }
+}
