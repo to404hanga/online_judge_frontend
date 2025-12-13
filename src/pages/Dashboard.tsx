@@ -28,11 +28,33 @@ export default function DashboardPage({ onLogout }: Props) {
   }, [])
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    function updateNow() {
       setNow(Date.now())
-    }, 1000)
+    }
+
+    updateNow()
+
+    const secondTimer = window.setInterval(updateNow, 1000)
+    const minuteTimer = window.setInterval(updateNow, 60 * 1000)
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        updateNow()
+      }
+    }
+
+    function handleFocus() {
+      updateNow()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+
     return () => {
-      clearInterval(timer)
+      window.clearInterval(secondTimer)
+      window.clearInterval(minuteTimer)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
     }
   }, [])
 
