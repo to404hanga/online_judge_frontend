@@ -40,7 +40,6 @@ function buildHeaders(extra?: HeadersInit): HeadersInit {
   return headers
 }
 
-// 发送 JSON 格式的 POST 请求，统一处理 CORS、凭证、以及 JWT 更新
 export async function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   const url = API_BASE_URL + path // 拼接完整请求地址
   const res = await fetch(url, {
@@ -64,6 +63,34 @@ export async function postJson<T>(path: string, body: unknown): Promise<ApiResul
   }
 
   // 返回统一结构，包含 HTTP 成功标记、数据、状态码以及（可能存在的）JWT
+  return {
+    ok: res.ok,
+    data,
+    status: res.status,
+    token: headerToken,
+  }
+}
+
+export async function putJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  const url = API_BASE_URL + path
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
+    mode: 'cors',
+    body: JSON.stringify(body ?? {}),
+  })
+
+  const headerToken = res.headers.get('X-JWT-Token')
+  if (headerToken) setToken(headerToken)
+
+  let data: T | null = null
+  try {
+    data = (await res.json()) as T
+  } catch {
+    data = null
+  }
+
   return {
     ok: res.ok,
     data,

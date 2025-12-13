@@ -1,4 +1,4 @@
-import { getJson } from './http'
+import { getJson, putJson } from './http'
 
 export type ProblemItem = {
   id: number
@@ -34,6 +34,9 @@ export async function fetchProblemList(
   pageSize: number,
   orderBy?: ProblemOrderBy,
   desc?: boolean,
+  status?: number,
+  visible?: number,
+  title?: string,
 ) {
   return getJson<ProblemListResponse>('/api/online-judge-controller', {
     cmd: 'GetProblemList',
@@ -41,5 +44,30 @@ export async function fetchProblemList(
     page_size: pageSize,
     order_by: orderBy,
     desc,
+    status,
+    visible,
+    title,
   })
+}
+
+export type UpdateProblemRequest = {
+  problem_id: number
+  title?: string
+  description?: string
+  status?: number
+  time_limit?: number
+  memory_limit?: number
+  visible?: number
+}
+
+export type UpdateProblemResponse = {
+  code: number
+  message: string
+}
+
+export async function updateProblem(body: UpdateProblemRequest) {
+  return putJson<UpdateProblemResponse>(
+    '/api/online-judge-controller?cmd=UpdateProblem',
+    body,
+  )
 }
