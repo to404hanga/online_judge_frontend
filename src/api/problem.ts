@@ -14,6 +14,22 @@ export type ProblemItem = {
   updated_at: string
 }
 
+export type ProblemDetail = {
+  id: number
+  title: string
+  description: string
+  status: number
+  time_limit: number
+  memory_limit: number
+  visible: number
+  creator_id: number
+  creator_realname: string
+  updater_id: number
+  updater_realname: string
+  created_at: string
+  updated_at: string
+}
+
 export type ProblemListData = {
   total: number
   page: number
@@ -25,6 +41,12 @@ export type ProblemListResponse = {
   code: number
   message: string
   data?: ProblemListData
+}
+
+export type ProblemDetailResponse = {
+  code: number
+  message: string
+  data?: ProblemDetail
 }
 
 export type ProblemOrderBy = 'id' | 'created_at' | 'updated_at'
@@ -47,6 +69,13 @@ export async function fetchProblemList(
     status,
     visible,
     title,
+  })
+}
+
+export async function fetchProblemDetail(problemId: number) {
+  return getJson<ProblemDetailResponse>('/api/online-judge-controller', {
+    cmd: 'GetProblem',
+    problem_id: problemId,
   })
 }
 
