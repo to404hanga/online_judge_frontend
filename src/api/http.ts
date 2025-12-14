@@ -96,6 +96,38 @@ export async function postJson<T>(path: string, body: unknown): Promise<ApiResul
   return result
 }
 
+export async function postFormData<T>(path: string, body: FormData): Promise<ApiResult<T>> {
+  const url = API_BASE_URL + path
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: buildHeaders(),
+    credentials: 'include',
+    mode: 'cors',
+    body,
+  })
+
+  const headerToken = res.headers.get('X-JWT-Token')
+  if (headerToken) setToken(headerToken)
+
+  let data: T | null = null
+  try {
+    data = (await res.json()) as T
+  } catch {
+    data = null
+  }
+
+  const result = {
+    ok: res.ok,
+    data,
+    status: res.status,
+    token: headerToken,
+  }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
+}
+
 export async function putJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   const url = API_BASE_URL + path
   const res = await fetch(url, {

@@ -1,4 +1,4 @@
-import { getJson, putJson } from './http'
+import { getJson, postFormData, putJson } from './http'
 
 export type ProblemItem = {
   id: number
@@ -98,5 +98,22 @@ export async function updateProblem(body: UpdateProblemRequest) {
   return putJson<UpdateProblemResponse>(
     '/api/online-judge-controller?cmd=UpdateProblem',
     body,
+  )
+}
+
+export type UploadProblemTestcaseResponse = {
+  code: number
+  message: string
+}
+
+export async function uploadProblemTestcase(
+  problemId: number,
+  file: File,
+) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return postFormData<UploadProblemTestcaseResponse>(
+    `/api/online-judge-controller?cmd=UploadProblemTestcase&problem_id=${problemId}`,
+    formData,
   )
 }

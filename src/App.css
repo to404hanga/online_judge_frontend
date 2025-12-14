@@ -1207,6 +1207,17 @@ body {
   grid-template-columns: 100px minmax(0, 1fr);
   row-gap: 6px;
   column-gap: 16px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.problem-detail-main-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .problem-detail-item-label {
@@ -1399,6 +1410,81 @@ body {
   min-height: 160px;
   resize: vertical;
   line-height: 1.6;
+}
+
+.problem-detail-upload-row {
+  margin-top: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  flex: 0 0 280px;
+  max-width: 320px;
+  box-shadow:
+    0 4px 10px rgba(15, 23, 42, 0.04),
+    0 0 0 1px rgba(148, 163, 184, 0.18);
+}
+
+.problem-detail-upload-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+  letter-spacing: 0.02em;
+}
+
+.problem-detail-upload-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.problem-detail-upload-subtitle {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.problem-detail-upload-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.problem-detail-upload-input {
+  font-size: 13px;
+  max-width: 160px;
+}
+
+.problem-detail-upload-btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f3f4f6;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}
+
+.problem-detail-upload-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.problem-detail-upload-btn:hover:not(:disabled) {
+  border-color: #c4d1ff;
+  background-color: #eef2ff;
+}
+
+.problem-detail-upload-hint {
+  font-size: 12px;
+  color: #9ca3af;
 }
 
 .problem-detail-actions {
