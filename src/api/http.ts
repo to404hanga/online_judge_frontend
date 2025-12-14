@@ -21,6 +21,27 @@ function setToken(token: string | null) {
   localStorage.setItem(TOKEN_KEY, token)
 }
 
+function handleUnauthorizedRedirect(status: number, data: unknown) {
+  const hasBodyCode =
+    data &&
+    typeof data === 'object' &&
+    'code' in (data as Record<string, unknown>) &&
+    (data as Record<string, unknown>).code === 401
+
+  if (status !== 401 && !hasBodyCode) return
+
+  localStorage.removeItem(TOKEN_KEY)
+
+  if (typeof window === 'undefined') return
+
+  if (window.location.pathname !== '/') {
+    window.location.href = '/'
+    return
+  }
+
+  window.location.reload()
+}
+
 // 统一的接口返回结构，便于调用端处理
 export type ApiResult<T> = {
   ok: boolean           // 请求是否成功（HTTP 2xx）
@@ -63,12 +84,16 @@ export async function postJson<T>(path: string, body: unknown): Promise<ApiResul
   }
 
   // 返回统一结构，包含 HTTP 成功标记、数据、状态码以及（可能存在的）JWT
-  return {
+  const result = {
     ok: res.ok,
     data,
     status: res.status,
     token: headerToken,
   }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
 }
 
 export async function putJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
@@ -91,12 +116,16 @@ export async function putJson<T>(path: string, body: unknown): Promise<ApiResult
     data = null
   }
 
-  return {
+  const result = {
     ok: res.ok,
     data,
     status: res.status,
     token: headerToken,
   }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
 }
 
 // 对外提供获取当前 JWT 的方法
@@ -139,10 +168,14 @@ export async function getJson<T>(
     data = null
   }
 
-  return {
+  const result = {
     ok: res.ok,
     data,
     status: res.status,
     token: headerToken,
   }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
 }
