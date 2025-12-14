@@ -22,11 +22,11 @@ type ProblemVisibleFilter = 'all' | '0' | '1'
 export default function AdminPage({ onLogout }: Props) {
   const [user, setUser] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error] = useState('')
   const [section, setSection] = useState<AdminSection>('problem')
   const [problems, setProblems] = useState<ProblemItem[]>([])
   const [problemLoading, setProblemLoading] = useState(false)
-  const [problemError, setProblemError] = useState('')
+  const [problemError] = useState('')
   const [problemPage, setProblemPage] = useState(1)
   const [problemTotal, setProblemTotal] = useState(0)
   const [problemPageSize, setProblemPageSize] = useState(10)
@@ -55,11 +55,34 @@ export default function AdminPage({ onLogout }: Props) {
   const [problemTitleFilter, setProblemTitleFilter] = useState('')
   const [problemTitleFilterInput, setProblemTitleFilterInput] =
     useState('')
+  const [problemRefreshToken, setProblemRefreshToken] = useState(0)
   const problemHeaderSelectRef = useRef<HTMLInputElement | null>(null)
+  const problemRefreshLastTimeRef = useRef<number>(0)
   const [problemDetailId, setProblemDetailId] = useState<number | null>(null)
   const [problemDetail, setProblemDetail] = useState<ProblemDetail | null>(null)
+  const [problemDetailTitleDraft, setProblemDetailTitleDraft] = useState('')
+  const [problemDetailStatusDraft, setProblemDetailStatusDraft] =
+    useState<number | null>(null)
+  const [problemDetailVisibleDraft, setProblemDetailVisibleDraft] =
+    useState<number | null>(null)
+  const [problemDetailTimeLimitDraft, setProblemDetailTimeLimitDraft] =
+    useState<number | ''>('')
+  const [problemDetailMemoryLimitDraft, setProblemDetailMemoryLimitDraft] =
+    useState<number | ''>('')
+  const [problemDetailDescriptionDraft, setProblemDetailDescriptionDraft] =
+    useState('')
   const [problemDetailLoading, setProblemDetailLoading] = useState(false)
-  const [problemDetailError, setProblemDetailError] = useState('')
+  const [problemDetailEditing, setProblemDetailEditing] = useState(false)
+  const [problemDetailStatusDropdownOpen, setProblemDetailStatusDropdownOpen] =
+    useState(false)
+  const [problemDetailVisibleDropdownOpen, setProblemDetailVisibleDropdownOpen] =
+    useState(false)
+  const problemDetailStatusCloseTimerRef = useRef<number | null>(null)
+  const problemDetailVisibleCloseTimerRef = useRef<number | null>(null)
+  const [problemDetailAlertOpen, setProblemDetailAlertOpen] = useState(false)
+  const [problemDetailAlertTitle, setProblemDetailAlertTitle] = useState('')
+  const [problemDetailAlertMessage, setProblemDetailAlertMessage] =
+    useState('')
 
   useEffect(() => {
     void loadUser()
@@ -85,20 +108,18 @@ export default function AdminPage({ onLogout }: Props) {
     problemVisibleFilter,
     problemPageSize,
     problemTitleFilter,
+    problemRefreshToken,
   ])
 
   async function loadUser() {
     setLoading(true)
-    setError('')
     try {
       const res = await fetchUserInfo()
-      if (!res.ok || !res.data) {
-        setError('获取用户信息失败，请重新登录')
-        return
+      if (res.ok && res.data) {
+        setUser(res.data)
       }
-      setUser(res.data)
     } catch {
-      setError('网络错误，请稍后重试')
+      // 忽略错误，保持当前页面不变
     } finally {
       setLoading(false)
     }
@@ -114,7 +135,6 @@ export default function AdminPage({ onLogout }: Props) {
     titleFilter: string,
   ) {
     setProblemLoading(true)
-    setProblemError('')
     try {
       const statusValue =
         statusFilter === 'all' ? undefined : Number(statusFilter)
@@ -134,7 +154,9 @@ export default function AdminPage({ onLogout }: Props) {
         titleValue,
       )
       if (!res.ok || !res.data || !res.data.data) {
-        setProblemError(res.data?.message ?? '获取题目列表失败')
+        setProblems([])
+        setProblemTotal(0)
+        setSelectedProblemIds([])
         return
       }
       const data = res.data.data
@@ -144,7 +166,9 @@ export default function AdminPage({ onLogout }: Props) {
         prev.filter((id) => data.list.some((item) => item.id === id)),
       )
     } catch {
-      setProblemError('网络错误，请稍后重试')
+      setProblems([])
+      setProblemTotal(0)
+      setSelectedProblemIds([])
     } finally {
       setProblemLoading(false)
     }
@@ -202,12 +226,37 @@ export default function AdminPage({ onLogout }: Props) {
     setProblemPage(1)
   }
 
+  function resetProblemFilters() {
+    if (problemLoading) return
+    const now = Date.now()
+    if (now - problemRefreshLastTimeRef.current < 3000) {
+      setProblemDetailAlertTitle('提示')
+      setProblemDetailAlertMessage('操作过于频繁，请稍后再试')
+      setProblemDetailAlertOpen(true)
+      return
+    }
+    problemRefreshLastTimeRef.current = now
+    setProblemPage(1)
+    setProblemOrderField('id')
+    setProblemOrderDesc(false)
+    setProblemStatusFilter('all')
+    setProblemVisibleFilter('all')
+    setProblemTitleFilter('')
+    setProblemTitleFilterInput('')
+    setSelectedProblemIds([])
+    setProblemOrderDropdownOpen(false)
+    setProblemStatusFilterOpen(false)
+    setProblemVisibleFilterOpen(false)
+    setProblemPageSizeDropdownOpen(false)
+    setProblemBatchDropdownOpen(false)
+    setProblemRefreshToken((v) => v + 1)
+  }
+
   async function batchUpdateSelectedProblems(
     patch: { status?: number; visible?: number },
   ) {
     if (!hasSelectedProblems) return
     setProblemBatchSubmitting(true)
-    setProblemError('')
     try {
       const results = await Promise.all(
         selectedProblemIds.map((id) =>
@@ -222,10 +271,10 @@ export default function AdminPage({ onLogout }: Props) {
           !res.ok ||
           !res.data ||
           typeof res.data.code !== 'number' ||
-          res.data.code !== 0,
+          res.data.code !== 200,
       )
       if (failed.length > 0) {
-        setProblemError('部分题目更新失败，请稍后重试')
+        window.alert('部分题目更新失败，请稍后重试')
       }
       await loadProblems(
         problemPage,
@@ -238,7 +287,7 @@ export default function AdminPage({ onLogout }: Props) {
       )
       setSelectedProblemIds([])
     } catch {
-      setProblemError('批量操作失败，请稍后重试')
+      window.alert('批量操作失败，请稍后重试')
     } finally {
       setProblemBatchSubmitting(false)
     }
@@ -246,52 +295,68 @@ export default function AdminPage({ onLogout }: Props) {
 
   async function openProblemDetail(problem: ProblemItem) {
     setProblemDetailId(problem.id)
-    setProblemDetail({
-      id: problem.id,
-      title: problem.title,
-      description: problem.description,
-      status: problem.status,
-      time_limit: problem.time_limit,
-      memory_limit: problem.memory_limit,
-      visible: problem.visible,
-      creator_id: problem.creator_id,
-      creator_realname: '',
-      updater_id: problem.updater_id,
-      updater_realname: '',
-      created_at: problem.created_at,
-      updated_at: problem.updated_at,
-    })
-    setProblemDetailError('')
+    setProblemDetailEditing(false)
+    setProblemDetailStatusDropdownOpen(false)
+    setProblemDetailVisibleDropdownOpen(false)
+    setProblemDetail(null)
+    setProblemDetailTitleDraft('')
+    setProblemDetailStatusDraft(null)
+    setProblemDetailVisibleDraft(null)
+    setProblemDetailTimeLimitDraft('')
+    setProblemDetailMemoryLimitDraft('')
+    setProblemDetailDescriptionDraft('')
     setProblemDetailLoading(true)
     try {
       const res = await fetchProblemDetail(problem.id)
-      if (!res.ok || !res.data || !res.data.data) {
-        setProblemDetailError(res.data?.message ?? '获取题目详情失败')
+      if (!res.ok || !res.data) {
+        const msg = res.data?.message ?? '获取题目详情失败'
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage(msg)
+        setProblemDetailAlertOpen(true)
         return
       }
-      setProblemDetail((prev) => {
-        const base = prev ?? {
-          id: problem.id,
-          title: problem.title,
-          description: problem.description,
-          status: problem.status,
-          time_limit: problem.time_limit,
-          memory_limit: problem.memory_limit,
-          visible: problem.visible,
-          creator_id: problem.creator_id,
-          creator_realname: '',
-          updater_id: problem.updater_id,
-          updater_realname: '',
-          created_at: problem.created_at,
-          updated_at: problem.updated_at,
-        }
-        return {
-          ...base,
-          ...(res.data?.data ?? {}),
-        }
-      })
+      if (typeof res.data.code !== 'number' || res.data.code !== 200) {
+        const msg = res.data.message || '获取题目详情失败'
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage(msg)
+        setProblemDetailAlertOpen(true)
+        return
+      }
+      const detail = res.data.data
+      if (!detail) {
+        const msg = '获取题目详情失败'
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage(msg)
+        setProblemDetailAlertOpen(true)
+        return
+      }
+      const normalized: ProblemDetail = {
+        id: detail.id,
+        title: detail.title ?? '',
+        description: detail.description ?? '',
+        status: detail.status ?? 0,
+        time_limit: detail.time_limit ?? 0,
+        memory_limit: detail.memory_limit ?? 0,
+        visible: detail.visible ?? 0,
+        creator_id: detail.creator_id ?? 0,
+        creator_realname: detail.creator_realname ?? '',
+        updater_id: detail.updater_id ?? 0,
+        updater_realname: detail.updater_realname ?? '',
+        created_at: detail.created_at ?? '',
+        updated_at: detail.updated_at ?? '',
+      }
+      setProblemDetail(normalized)
+      setProblemDetailTitleDraft(normalized.title ?? '')
+      setProblemDetailStatusDraft(normalized.status)
+      setProblemDetailVisibleDraft(normalized.visible)
+      setProblemDetailTimeLimitDraft(normalized.time_limit)
+      setProblemDetailMemoryLimitDraft(normalized.memory_limit)
+      setProblemDetailDescriptionDraft(normalized.description ?? '')
     } catch {
-      setProblemDetailError('网络错误，请稍后重试')
+      const msg = '获取题目详情失败'
+      setProblemDetailAlertTitle('操作失败')
+      setProblemDetailAlertMessage(msg)
+      setProblemDetailAlertOpen(true)
     } finally {
       setProblemDetailLoading(false)
     }
@@ -300,7 +365,197 @@ export default function AdminPage({ onLogout }: Props) {
   function closeProblemDetail() {
     setProblemDetailId(null)
     setProblemDetail(null)
-    setProblemDetailError('')
+    setProblemDetailEditing(false)
+    setProblemDetailStatusDropdownOpen(false)
+    setProblemDetailVisibleDropdownOpen(false)
+    void loadProblems(
+      problemPage,
+      problemPageSize,
+      problemOrderField,
+      problemOrderDesc,
+      problemStatusFilter,
+      problemVisibleFilter,
+      problemTitleFilter,
+    )
+  }
+
+  const problemDetailHasChanges =
+    problemDetailEditing &&
+    problemDetail !== null &&
+    (problemDetailTitleDraft !== (problemDetail.title ?? '') ||
+      (problemDetailStatusDraft !== null &&
+        problemDetailStatusDraft !== problemDetail.status) ||
+      (problemDetailVisibleDraft !== null &&
+        problemDetailVisibleDraft !== problemDetail.visible) ||
+      (problemDetailTimeLimitDraft !== '' &&
+        problemDetailTimeLimitDraft !== problemDetail.time_limit) ||
+      (problemDetailMemoryLimitDraft !== '' &&
+        problemDetailMemoryLimitDraft !== problemDetail.memory_limit) ||
+      problemDetailDescriptionDraft !==
+        (problemDetail.description ?? ''))
+
+  function clearProblemDetailStatusCloseTimer() {
+    if (problemDetailStatusCloseTimerRef.current !== null) {
+      window.clearTimeout(problemDetailStatusCloseTimerRef.current)
+      problemDetailStatusCloseTimerRef.current = null
+    }
+  }
+
+  function clearProblemDetailVisibleCloseTimer() {
+    if (problemDetailVisibleCloseTimerRef.current !== null) {
+      window.clearTimeout(problemDetailVisibleCloseTimerRef.current)
+      problemDetailVisibleCloseTimerRef.current = null
+    }
+  }
+
+  function clampProblemDetailTimeLimit() {
+    if (problemDetailTimeLimitDraft === '') return
+    let v = problemDetailTimeLimitDraft
+    if (v < 50) v = 50
+    if (v > 30000) v = 30000
+    setProblemDetailTimeLimitDraft(v)
+  }
+
+  function clampProblemDetailMemoryLimit() {
+    if (problemDetailMemoryLimitDraft === '') return
+    let v = problemDetailMemoryLimitDraft
+    if (v < 128) v = 128
+    if (v > 1024) v = 1024
+    setProblemDetailMemoryLimitDraft(v)
+  }
+
+  async function handleConfirmProblemDetailChanges() {
+    if (!problemDetail || !problemDetailHasChanges) return
+
+    const body: {
+      problem_id: number
+      title?: string
+      description?: string
+      status?: number
+      time_limit?: number
+      memory_limit?: number
+      visible?: number
+    } = {
+      problem_id: problemDetail.id,
+    }
+
+    if (problemDetailTitleDraft !== (problemDetail.title ?? '')) {
+      body.title = problemDetailTitleDraft
+    }
+
+    if (
+      problemDetailStatusDraft !== null &&
+      problemDetailStatusDraft !== problemDetail.status
+    ) {
+      body.status = problemDetailStatusDraft
+    }
+
+    if (
+      problemDetailVisibleDraft !== null &&
+      problemDetailVisibleDraft !== problemDetail.visible
+    ) {
+      body.visible = problemDetailVisibleDraft
+    }
+
+    if (
+      problemDetailTimeLimitDraft !== '' &&
+      problemDetailTimeLimitDraft !== problemDetail.time_limit
+    ) {
+      body.time_limit = problemDetailTimeLimitDraft
+    }
+
+    if (
+      problemDetailMemoryLimitDraft !== '' &&
+      problemDetailMemoryLimitDraft !== problemDetail.memory_limit
+    ) {
+      body.memory_limit = problemDetailMemoryLimitDraft
+    }
+
+    if (
+      typeof body.title === 'undefined' &&
+      typeof body.description === 'undefined' &&
+      typeof body.status === 'undefined' &&
+      typeof body.time_limit === 'undefined' &&
+      typeof body.memory_limit === 'undefined' &&
+      typeof body.visible === 'undefined'
+    ) {
+      return
+    }
+
+    try {
+      const res = await updateProblem(body)
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        const msg = res.data?.message ?? '更新题目失败'
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage(msg)
+        setProblemDetailAlertOpen(true)
+        return
+      }
+
+      setProblemDetailLoading(true)
+      try {
+        const detailRes = await fetchProblemDetail(problemDetail.id)
+        if (!detailRes.ok || !detailRes.data) {
+          const msg = '获取题目详情失败'
+          setProblemDetailAlertTitle('操作失败')
+          setProblemDetailAlertMessage(msg)
+          setProblemDetailAlertOpen(true)
+          return
+        }
+        if (
+          typeof detailRes.data.code !== 'number' ||
+          detailRes.data.code !== 200
+        ) {
+          const msg = detailRes.data.message || '获取题目详情失败'
+          setProblemDetailAlertTitle('操作失败')
+          setProblemDetailAlertMessage(msg)
+          setProblemDetailAlertOpen(true)
+          return
+        }
+        const detail = detailRes.data.data
+        if (!detail) {
+          const msg = '获取题目详情失败'
+          setProblemDetailAlertTitle('操作失败')
+          setProblemDetailAlertMessage(msg)
+          setProblemDetailAlertOpen(true)
+          return
+        }
+        const merged: ProblemDetail = {
+          id: problemDetail.id,
+          title: detail.title ?? problemDetail.title,
+          description: detail.description ?? problemDetail.description,
+          status: detail.status ?? problemDetail.status,
+          time_limit: detail.time_limit ?? problemDetail.time_limit,
+          memory_limit: detail.memory_limit ?? problemDetail.memory_limit,
+          visible: detail.visible ?? problemDetail.visible,
+          creator_id: detail.creator_id ?? problemDetail.creator_id,
+          creator_realname: detail.creator_realname ?? problemDetail.creator_realname,
+          updater_id: detail.updater_id ?? problemDetail.updater_id,
+          updater_realname:
+            detail.updater_realname ?? problemDetail.updater_realname,
+          created_at: detail.created_at ?? problemDetail.created_at,
+          updated_at: detail.updated_at ?? problemDetail.updated_at,
+        }
+
+        setProblemDetail(merged)
+        setProblemDetailTitleDraft(merged.title ?? '')
+        setProblemDetailStatusDraft(merged.status)
+        setProblemDetailVisibleDraft(merged.visible)
+        setProblemDetailTimeLimitDraft(merged.time_limit)
+        setProblemDetailMemoryLimitDraft(merged.memory_limit)
+        setProblemDetailDescriptionDraft(merged.description ?? '')
+        setProblemDetailEditing(false)
+        setProblemDetailStatusDropdownOpen(false)
+        setProblemDetailVisibleDropdownOpen(false)
+      } finally {
+        setProblemDetailLoading(false)
+      }
+    } catch {
+      const msg = '网络错误，请稍后重试'
+      setProblemDetailAlertTitle('操作失败')
+      setProblemDetailAlertMessage(msg)
+      setProblemDetailAlertOpen(true)
+    }
   }
 
   function renderProblemDescriptionInline(text: string): ReactNode[] {
@@ -636,68 +891,295 @@ export default function AdminPage({ onLogout }: Props) {
             {problemDetailLoading && (
               <div className="problem-detail-body">正在加载题目详情…</div>
             )}
-            {!problemDetailLoading && problemDetailError && (
-              <div className="problem-detail-body problem-detail-error">
-                {problemDetailError}
-              </div>
-            )}
-            {!problemDetailLoading && !problemDetailError && problemDetail && (
+            {!problemDetailLoading && problemDetail && (
               <div className="problem-detail-body">
                 <div className="problem-detail-section">
                   <div className="problem-detail-section-title">基本信息</div>
                   <div className="problem-detail-grid">
                     <div className="problem-detail-item-label">标题</div>
                     <div className="problem-detail-item-value">
-                      {problemDetail.title}
+                      {problemDetailEditing ? (
+                        <div className="problem-detail-title-input-wrapper">
+                          <input
+                            type="text"
+                            className="problem-detail-input problem-detail-input-title"
+                            maxLength={255}
+                            value={problemDetailTitleDraft}
+                            onChange={(e) =>
+                              setProblemDetailTitleDraft(e.target.value)
+                            }
+                          />
+                          <span className="problem-detail-title-counter">
+                            {problemDetailTitleDraft.length} / 255
+                          </span>
+                        </div>
+                      ) : (
+                        problemDetail.title
+                      )}
                     </div>
                     <div className="problem-detail-item-label">状态</div>
                     <div className="problem-detail-item-value">
-                      <span
-                        className={
-                          'problem-status-pill ' +
-                          (problemDetail.status === 0
-                            ? 'problem-status-pill-pending'
+                      {problemDetailEditing ? (
+                        <div
+                          className="problem-sort-select-wrapper"
+                          onMouseEnter={clearProblemDetailStatusCloseTimer}
+                          onMouseLeave={() => {
+                            clearProblemDetailStatusCloseTimer()
+                            problemDetailStatusCloseTimerRef.current =
+                              window.setTimeout(() => {
+                                setProblemDetailStatusDropdownOpen(false)
+                              }, 100)
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className={
+                              'problem-sort-select problem-detail-select-trigger' +
+                              (problemDetailStatusDropdownOpen
+                                ? ' problem-sort-select-open'
+                                : '')
+                            }
+                            onClick={() =>
+                              setProblemDetailStatusDropdownOpen((open) => !open)
+                            }
+                          >
+                            {(problemDetailStatusDraft ?? problemDetail.status) === 0
+                              ? '未发布'
+                              : (problemDetailStatusDraft ?? problemDetail.status) === 1
+                                ? '已发布'
+                                : '已删除'}
+                          </button>
+                          {problemDetailStatusDropdownOpen && (
+                            <div className="problem-sort-menu problem-detail-select-menu">
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setProblemDetailStatusDraft(0)
+                                  setProblemDetailStatusDropdownOpen(false)
+                                }}
+                              >
+                                未发布
+                              </button>
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setProblemDetailStatusDraft(1)
+                                  setProblemDetailStatusDropdownOpen(false)
+                                }}
+                              >
+                                已发布
+                              </button>
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setProblemDetailStatusDraft(2)
+                                  setProblemDetailStatusDropdownOpen(false)
+                                }}
+                              >
+                                已删除
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          className={
+                            'problem-status-pill ' +
+                            (problemDetail.status === 0
+                              ? 'problem-status-pill-pending'
+                              : problemDetail.status === 1
+                                ? 'problem-status-pill-active'
+                                : 'problem-status-pill-deleted')
+                          }
+                        >
+                          {problemDetail.status === 0
+                            ? '未发布'
                             : problemDetail.status === 1
-                              ? 'problem-status-pill-active'
-                              : 'problem-status-pill-deleted')
-                        }
-                      >
-                        {problemDetail.status === 0
-                          ? '未发布'
-                          : problemDetail.status === 1
-                            ? '已发布'
-                            : '已删除'}
-                      </span>
+                              ? '已发布'
+                              : '已删除'}
+                        </span>
+                      )}
                     </div>
                     <div className="problem-detail-item-label">
                       非赛时可见性
                     </div>
                     <div className="problem-detail-item-value">
-                      <span
-                        className={
-                          'problem-visible-pill ' +
-                          (problemDetail.visible === 1
-                            ? 'problem-visible-pill-on'
-                            : 'problem-visible-pill-off')
-                        }
-                      >
-                        {problemDetail.visible === 1 ? '可见' : '不可见'}
-                      </span>
+                      {problemDetailEditing ? (
+                        <div
+                          className="problem-sort-select-wrapper"
+                          onMouseEnter={clearProblemDetailVisibleCloseTimer}
+                          onMouseLeave={() => {
+                            clearProblemDetailVisibleCloseTimer()
+                            problemDetailVisibleCloseTimerRef.current =
+                              window.setTimeout(() => {
+                                setProblemDetailVisibleDropdownOpen(false)
+                              }, 100)
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className={
+                              'problem-sort-select problem-detail-select-trigger' +
+                              (problemDetailVisibleDropdownOpen
+                                ? ' problem-sort-select-open'
+                                : '')
+                            }
+                            onClick={() =>
+                              setProblemDetailVisibleDropdownOpen((open) => !open)
+                            }
+                          >
+                            {(problemDetailVisibleDraft ?? problemDetail.visible) === 1
+                              ? '可见'
+                              : '不可见'}
+                          </button>
+                          {problemDetailVisibleDropdownOpen && (
+                            <div className="problem-sort-menu problem-detail-select-menu">
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setProblemDetailVisibleDraft(1)
+                                  setProblemDetailVisibleDropdownOpen(false)
+                                }}
+                              >
+                                可见
+                              </button>
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setProblemDetailVisibleDraft(0)
+                                  setProblemDetailVisibleDropdownOpen(false)
+                                }}
+                              >
+                                不可见
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          className={
+                            'problem-visible-pill ' +
+                            (problemDetail.visible === 1
+                              ? 'problem-visible-pill-on'
+                              : 'problem-visible-pill-off')
+                          }
+                        >
+                          {problemDetail.visible === 1 ? '可见' : '不可见'}
+                        </span>
+                      )}
                     </div>
                     <div className="problem-detail-item-label">时间限制</div>
                     <div className="problem-detail-item-value">
-                      {problemDetail.time_limit} ms
+                      {problemDetailEditing ? (
+                        <div className="problem-detail-limit-input-wrapper">
+                          <input
+                            type="number"
+                            className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
+                            min={50}
+                            max={30000}
+                            value={problemDetailTimeLimitDraft}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setProblemDetailTimeLimitDraft(
+                                v === '' ? '' : Number(v),
+                              )
+                            }}
+                            onBlur={clampProblemDetailTimeLimit}
+                          />
+                          <span className="problem-detail-limit-unit">
+                            ms
+                          </span>
+                        </div>
+                      ) : (
+                        `${problemDetail.time_limit} ms`
+                      )}
                     </div>
                     <div className="problem-detail-item-label">内存限制</div>
                     <div className="problem-detail-item-value">
-                      {problemDetail.memory_limit} MB
+                      {problemDetailEditing ? (
+                        <div className="problem-detail-limit-input-wrapper">
+                          <input
+                            type="number"
+                            className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
+                            min={128}
+                            max={1024}
+                            value={problemDetailMemoryLimitDraft}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setProblemDetailMemoryLimitDraft(
+                                v === '' ? '' : Number(v),
+                              )
+                            }}
+                            onBlur={clampProblemDetailMemoryLimit}
+                          />
+                          <span className="problem-detail-limit-unit">
+                            MB
+                          </span>
+                        </div>
+                      ) : (
+                        `${problemDetail.memory_limit} MB`
+                      )}
                     </div>
                   </div>
                 </div>
                 <div className="problem-detail-section">
                   <div className="problem-detail-section-title">题目描述</div>
                   <div className="problem-detail-description">
-                    {renderProblemDescription(problemDetail.description)}
+                    {problemDetailEditing ? (
+                      <textarea
+                        className="problem-detail-textarea"
+                        value={problemDetailDescriptionDraft}
+                        onChange={(e) =>
+                          setProblemDetailDescriptionDraft(e.target.value)
+                        }
+                      />
+                    ) : (
+                      renderProblemDescription(problemDetail.description)
+                    )}
+                  </div>
+                  <div className="problem-detail-actions">
+                    {!problemDetailEditing && (
+                      <button
+                        type="button"
+                        className="problem-detail-edit-btn"
+                        onClick={() => {
+                          setProblemDetailTitleDraft(
+                            problemDetail.title ?? '',
+                          )
+                          setProblemDetailEditing(true)
+                        }}
+                      >
+                        修改
+                      </button>
+                    )}
+                    {problemDetailEditing && (
+                      <>
+                        <button
+                          type="button"
+                          className="problem-detail-cancel-btn"
+                          onClick={() => {
+                            setProblemDetailEditing(false)
+                            setProblemDetailStatusDropdownOpen(false)
+                            setProblemDetailVisibleDropdownOpen(false)
+                          }}
+                        >
+                          取消修改
+                        </button>
+                        <button
+                          type="button"
+                          className="problem-detail-confirm-btn"
+                          disabled={!problemDetailHasChanges}
+                          onClick={handleConfirmProblemDetailChanges}
+                        >
+                          确认修改
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -805,6 +1287,16 @@ export default function AdminPage({ onLogout }: Props) {
                 </div>
                 <div className="problem-toolbar-right">
                   <div className="problem-search-group">
+                    <button
+                      type="button"
+                      className="competition-refresh-btn"
+                      onClick={resetProblemFilters}
+                      disabled={problemLoading}
+                      aria-label="重置筛选并刷新题目列表"
+                      title="重置筛选并刷新"
+                    >
+                      ↻
+                    </button>
                     <div className="problem-search-input-wrapper">
                       <button
                         type="button"
@@ -1229,17 +1721,10 @@ export default function AdminPage({ onLogout }: Props) {
                           </button>
                           <button
                             type="button"
-                            className="problem-action-btn"
-                            aria-label="修改内容"
-                            title="修改内容"
-                          >
-                            ✏
-                          </button>
-                          <button
-                            type="button"
                             className="problem-action-btn problem-action-danger"
                             aria-label="删除题目"
                             title="删除题目"
+                            disabled={p.status === 2}
                           >
                             🗑
                           </button>
@@ -1426,6 +1911,27 @@ export default function AdminPage({ onLogout }: Props) {
             )}
           </div>
         </div>
+        {problemDetailAlertOpen && (
+          <div className="admin-modal-overlay">
+            <div className="admin-modal">
+              <div className="admin-modal-title">
+                {problemDetailAlertTitle || '提示'}
+              </div>
+              <div className="admin-modal-message">
+                {problemDetailAlertMessage}
+              </div>
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="admin-modal-primary-btn"
+                  onClick={() => setProblemDetailAlertOpen(false)}
+                >
+                  知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

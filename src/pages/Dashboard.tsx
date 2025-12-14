@@ -112,7 +112,7 @@ export default function DashboardPage({ onLogout }: Props) {
     try {
       const res = await startCompetition(selectedCompetition.id)
       const data = res.data
-      if (!res.ok || !data || data.code !== 0) {
+      if (!res.ok || !data || data.code !== 200) {
         setStartError(data?.message ?? '开始比赛失败')
         return
       }
