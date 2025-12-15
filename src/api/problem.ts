@@ -1,4 +1,4 @@
-import { getJson, postFormData, putJson } from './http'
+import { getJson, postFormData, postJsonWithHeaders, putJson } from './http'
 
 export type ProblemItem = {
   id: number
@@ -115,5 +115,42 @@ export async function uploadProblemTestcase(
   return postFormData<UploadProblemTestcaseResponse>(
     `/api/online-judge-controller?cmd=UploadProblemTestcase&problem_id=${problemId}`,
     formData,
+  )
+}
+
+export type CreateProblemRequest = {
+  title: string
+  description: string
+  time_limit: number
+  memory_limit: number
+  visible: number
+}
+
+export type CreateProblemResponse = {
+  code: number
+  message: string
+  data?: ProblemDetail
+}
+
+async function computeDescriptionHash(description: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(description)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  const bytes = new Uint8Array(digest)
+  let hex = ''
+  for (let i = 0; i < bytes.length; i += 1) {
+    hex += bytes[i].toString(16).padStart(2, '0')
+  }
+  return hex
+}
+
+export async function createProblem(body: CreateProblemRequest) {
+  const hash = await computeDescriptionHash(body.description)
+  return postJsonWithHeaders<CreateProblemResponse>(
+    '/api/online-judge-controller?cmd=CreateProblem',
+    body,
+    {
+      'X-Description-Hash': hash,
+    },
   )
 }

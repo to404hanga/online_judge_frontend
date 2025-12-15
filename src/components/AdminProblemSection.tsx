@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
+  createProblem,
   fetchProblemDetail,
   fetchProblemList,
   type ProblemDetail,
@@ -89,6 +90,9 @@ export default function AdminProblemSection() {
     useState(false)
   const problemTestcaseInputRef = useRef<HTMLInputElement | null>(null)
   const [problemUploadModalOpen, setProblemUploadModalOpen] =
+    useState(false)
+  const [isCreatingProblem, setIsCreatingProblem] = useState(false)
+  const [problemCreateSubmitting, setProblemCreateSubmitting] =
     useState(false)
 
   useEffect(() => {
@@ -403,6 +407,47 @@ export default function AdminProblemSection() {
     if (v > 1024) v = 1024
     setProblemDetailMemoryLimitDraft(v)
   }
+
+  function startCreateProblem() {
+    setProblemDetailId(null)
+    setProblemDetail(null)
+    setProblemDetailEditing(false)
+    setProblemDetailStatusDropdownOpen(false)
+    setProblemDetailVisibleDropdownOpen(false)
+    setProblemDetailTitleDraft('')
+    setProblemDetailStatusDraft(null)
+    setProblemDetailVisibleDraft(1)
+    setProblemDetailTimeLimitDraft(1000)
+    setProblemDetailMemoryLimitDraft(256)
+    setProblemDetailDescriptionDraft('')
+    setProblemTestcaseFile(null)
+    if (problemTestcaseInputRef.current) {
+      problemTestcaseInputRef.current.value = ''
+    }
+    setIsCreatingProblem(true)
+  }
+
+  function cancelCreateProblem() {
+    if (problemCreateSubmitting) return
+    setIsCreatingProblem(false)
+    setProblemDetailTitleDraft('')
+    setProblemDetailStatusDraft(null)
+    setProblemDetailVisibleDraft(null)
+    setProblemDetailTimeLimitDraft('')
+    setProblemDetailMemoryLimitDraft('')
+    setProblemDetailDescriptionDraft('')
+    setProblemTestcaseFile(null)
+    if (problemTestcaseInputRef.current) {
+      problemTestcaseInputRef.current.value = ''
+    }
+  }
+
+  const canSubmitCreateProblem =
+    !problemCreateSubmitting &&
+    problemDetailTitleDraft.trim().length > 0 &&
+    problemDetailDescriptionDraft.trim().length > 0 &&
+    typeof problemDetailTimeLimitDraft === 'number' &&
+    typeof problemDetailMemoryLimitDraft === 'number'
 
   async function handleConfirmProblemDetailChanges() {
     if (!problemDetail || !problemDetailHasChanges) return
@@ -861,6 +906,98 @@ export default function AdminProblemSection() {
     }
   }
 
+  async function handleConfirmCreateProblem() {
+    if (problemCreateSubmitting) return
+    const title = problemDetailTitleDraft.trim()
+    const description = problemDetailDescriptionDraft.trim()
+    if (!title || !description) {
+      setProblemDetailAlertTitle('提示')
+      setProblemDetailAlertMessage('请填写题目标题和题目描述')
+      setProblemDetailAlertOpen(true)
+      return
+    }
+    if (
+      typeof problemDetailTimeLimitDraft !== 'number' ||
+      typeof problemDetailMemoryLimitDraft !== 'number'
+    ) {
+      setProblemDetailAlertTitle('提示')
+      setProblemDetailAlertMessage('请填写完整的时间限制和内存限制')
+      setProblemDetailAlertOpen(true)
+      return
+    }
+    const timeLimit = problemDetailTimeLimitDraft
+    const memoryLimit = problemDetailMemoryLimitDraft
+    const visible = problemDetailVisibleDraft ?? 1
+    setProblemCreateSubmitting(true)
+    try {
+      const res = await createProblem({
+        title,
+        description,
+        time_limit: timeLimit,
+        memory_limit: memoryLimit,
+        visible,
+      })
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        const msg = res.data?.message ?? '创建题目失败'
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage(msg)
+        setProblemDetailAlertOpen(true)
+        return
+      }
+      const detail = res.data.data
+      if (detail && typeof detail.id === 'number') {
+        const normalized: ProblemDetail = {
+          id: detail.id,
+          title: detail.title ?? title,
+          description: detail.description ?? description,
+          status: detail.status ?? 0,
+          time_limit: detail.time_limit ?? timeLimit,
+          memory_limit: detail.memory_limit ?? memoryLimit,
+          visible: detail.visible ?? visible,
+          creator_id: detail.creator_id ?? 0,
+          creator_realname: detail.creator_realname ?? '',
+          updater_id: detail.updater_id ?? 0,
+          updater_realname: detail.updater_realname ?? '',
+          created_at: detail.created_at ?? '',
+          updated_at: detail.updated_at ?? '',
+        }
+        setProblemDetail(normalized)
+        setProblemDetailId(normalized.id)
+        setProblemDetailTitleDraft(normalized.title ?? '')
+        setProblemDetailStatusDraft(normalized.status)
+        setProblemDetailVisibleDraft(normalized.visible)
+        setProblemDetailTimeLimitDraft(normalized.time_limit)
+        setProblemDetailMemoryLimitDraft(normalized.memory_limit)
+        setProblemDetailDescriptionDraft(normalized.description ?? '')
+        setIsCreatingProblem(false)
+        setProblemDetailEditing(false)
+      } else {
+        setProblemDetailAlertTitle('操作成功')
+        setProblemDetailAlertMessage('题目创建成功')
+        setProblemDetailAlertOpen(true)
+        setIsCreatingProblem(false)
+        setProblemDetailEditing(false)
+        setProblemDetailId(null)
+        setProblemDetail(null)
+        await loadProblems(
+          problemPage,
+          problemPageSize,
+          problemOrderField,
+          problemOrderDesc,
+          problemStatusFilter,
+          problemVisibleFilter,
+          problemTitleFilter,
+        )
+      }
+    } catch {
+      setProblemDetailAlertTitle('操作失败')
+      setProblemDetailAlertMessage('创建题目失败，请稍后重试')
+      setProblemDetailAlertOpen(true)
+    } finally {
+      setProblemCreateSubmitting(false)
+    }
+  }
+
   return (
     <>
       {problemDetailId !== null ? (
@@ -1216,6 +1353,177 @@ export default function AdminProblemSection() {
               </div>
             </div>
           )}
+        </div>
+      ) : isCreatingProblem ? (
+        <div className="problem-detail">
+          <div className="problem-detail-header">
+            <button
+              type="button"
+              className="problem-detail-back-btn"
+              onClick={cancelCreateProblem}
+              disabled={problemCreateSubmitting}
+            >
+              ← 返回题目列表
+            </button>
+            <div className="problem-detail-header-main">
+              <div className="problem-detail-title">创建题目</div>
+              <div className="problem-detail-meta">
+                <span className="problem-detail-meta-item">
+                  请填写题目信息并点击右下角确认创建
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="problem-detail-body">
+            <div className="problem-detail-section">
+              <div className="problem-detail-section-title">基本信息</div>
+              <div className="problem-detail-main-row">
+                <div className="problem-detail-grid">
+                  <div className="problem-detail-item-label">标题</div>
+                  <div className="problem-detail-item-value">
+                    <div className="problem-detail-title-input-wrapper">
+                      <input
+                        type="text"
+                        className="problem-detail-input problem-detail-input-title"
+                        maxLength={255}
+                        value={problemDetailTitleDraft}
+                        onChange={(e) =>
+                          setProblemDetailTitleDraft(e.target.value)
+                        }
+                        disabled={problemCreateSubmitting}
+                      />
+                      <span className="problem-detail-title-counter">
+                        {problemDetailTitleDraft.length} / 255
+                      </span>
+                    </div>
+                  </div>
+                  <div className="problem-detail-item-label">
+                    非赛时可见性
+                  </div>
+                  <div className="problem-detail-item-value">
+                    <div className="problem-sort-select-wrapper">
+                      <button
+                        type="button"
+                        className={
+                          'problem-sort-select problem-detail-select-trigger' +
+                          (problemDetailVisibleDropdownOpen
+                            ? ' problem-sort-select-open'
+                            : '')
+                        }
+                        onClick={() =>
+                          setProblemDetailVisibleDropdownOpen(
+                            (open) => !open,
+                          )
+                        }
+                        disabled={problemCreateSubmitting}
+                      >
+                        {(problemDetailVisibleDraft ?? 1) === 1
+                          ? '可见'
+                          : '不可见'}
+                      </button>
+                      {problemDetailVisibleDropdownOpen && (
+                        <div className="problem-sort-menu problem-detail-select-menu">
+                          <button
+                            type="button"
+                            className="problem-sort-menu-item"
+                            onClick={() => {
+                              setProblemDetailVisibleDraft(1)
+                              setProblemDetailVisibleDropdownOpen(false)
+                            }}
+                          >
+                            可见
+                          </button>
+                          <button
+                            type="button"
+                            className="problem-sort-menu-item"
+                            onClick={() => {
+                              setProblemDetailVisibleDraft(0)
+                              setProblemDetailVisibleDropdownOpen(false)
+                            }}
+                          >
+                            不可见
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="problem-detail-item-label">时间限制</div>
+                  <div className="problem-detail-item-value">
+                    <div className="problem-detail-limit-input-wrapper">
+                      <input
+                        type="number"
+                        className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
+                        min={50}
+                        max={30000}
+                        value={problemDetailTimeLimitDraft}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setProblemDetailTimeLimitDraft(
+                            v === '' ? '' : Number(v),
+                          )
+                        }}
+                        onBlur={clampProblemDetailTimeLimit}
+                        disabled={problemCreateSubmitting}
+                      />
+                      <span className="problem-detail-limit-unit">ms</span>
+                    </div>
+                  </div>
+                  <div className="problem-detail-item-label">内存限制</div>
+                  <div className="problem-detail-item-value">
+                    <div className="problem-detail-limit-input-wrapper">
+                      <input
+                        type="number"
+                        className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
+                        min={128}
+                        max={1024}
+                        value={problemDetailMemoryLimitDraft}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setProblemDetailMemoryLimitDraft(
+                            v === '' ? '' : Number(v),
+                          )
+                        }}
+                        onBlur={clampProblemDetailMemoryLimit}
+                        disabled={problemCreateSubmitting}
+                      />
+                      <span className="problem-detail-limit-unit">MB</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="problem-detail-section">
+              <div className="problem-detail-section-title">题目描述</div>
+              <div className="problem-detail-description">
+                <textarea
+                  className="problem-detail-textarea"
+                  value={problemDetailDescriptionDraft}
+                  onChange={(e) =>
+                    setProblemDetailDescriptionDraft(e.target.value)
+                  }
+                  disabled={problemCreateSubmitting}
+                />
+              </div>
+              <div className="problem-detail-actions">
+                <button
+                  type="button"
+                  className="problem-detail-cancel-btn"
+                  onClick={cancelCreateProblem}
+                  disabled={problemCreateSubmitting}
+                >
+                  取消创建
+                </button>
+                <button
+                  type="button"
+                  className="problem-detail-confirm-btn"
+                  disabled={!canSubmitCreateProblem}
+                  onClick={handleConfirmCreateProblem}
+                >
+                  {problemCreateSubmitting ? '创建中…' : '确认创建'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="problem-list">
@@ -1769,6 +2077,7 @@ export default function AdminProblemSection() {
                   aria-label="新增题目"
                   title="新增题目"
                   disabled={problemLoading}
+                  onClick={startCreateProblem}
                 >
                   ＋
                 </button>

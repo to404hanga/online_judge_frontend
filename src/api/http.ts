@@ -61,21 +61,23 @@ function buildHeaders(extra?: HeadersInit): HeadersInit {
   return headers
 }
 
-export async function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
-  const url = API_BASE_URL + path // 拼接完整请求地址
+export async function postJson<T>(
+  path: string,
+  body: unknown,
+): Promise<ApiResult<T>> {
+  const url = API_BASE_URL + path
   const res = await fetch(url, {
     method: 'POST',
-    headers: buildHeaders({ 'Content-Type': 'application/json' }), // 设置 JSON 头
-    credentials: 'include', // 携带 cookie 等凭证
-    mode: 'cors', // 跨域请求
-    body: JSON.stringify(body ?? {}), // 请求体
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
+    mode: 'cors',
+    body: JSON.stringify(body ?? {}),
   })
 
   // 后端通过自定义响应头传递新的 JWT
   const headerToken = res.headers.get('X-JWT-Token')
   if (headerToken) setToken(headerToken) // 若存在新 JWT，则更新到本地存储
 
-  // 响应体解析为 JSON；若解析失败（例如返回空），保持为 null
   let data: T | null = null
   try {
     data = (await res.json()) as T
@@ -83,7 +85,46 @@ export async function postJson<T>(path: string, body: unknown): Promise<ApiResul
     data = null
   }
 
-  // 返回统一结构，包含 HTTP 成功标记、数据、状态码以及（可能存在的）JWT
+  const result = {
+    ok: res.ok,
+    data,
+    status: res.status,
+    token: headerToken,
+  }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
+}
+
+export async function postJsonWithHeaders<T>(
+  path: string,
+  body: unknown,
+  extraHeaders: Record<string, string>,
+): Promise<ApiResult<T>> {
+  const url = API_BASE_URL + path
+  const headers = buildHeaders({
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    mode: 'cors',
+    body: JSON.stringify(body ?? {}),
+  })
+
+  const headerToken = res.headers.get('X-JWT-Token')
+  if (headerToken) setToken(headerToken)
+
+  let data: T | null = null
+  try {
+    data = (await res.json()) as T
+  } catch {
+    data = null
+  }
+
   const result = {
     ok: res.ok,
     data,
