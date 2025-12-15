@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type MouseEvent,
+} from 'react'
 import {
   createProblem,
   fetchProblemDetail,
@@ -9,10 +15,280 @@ import {
   updateProblem,
   uploadProblemTestcase,
 } from '../api/problem'
-import { formatDateTimeText } from '../utils/datetime'
+import AdminProblemDetail from './AdminProblemDetail'
+import AdminProblemCreate from './AdminProblemCreate'
+import AdminProblemList from './AdminProblemList'
 
 type ProblemStatusFilter = 'all' | '0' | '1' | '2'
 type ProblemVisibleFilter = 'all' | '0' | '1'
+
+function renderProblemDescriptionInline(text: string): ReactNode[] {
+  const elements: ReactNode[] = []
+  let remaining = text
+  const pattern =
+    /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/u
+  while (remaining.length > 0) {
+    const match = remaining.match(pattern)
+    if (!match || match.index === undefined) {
+      if (remaining) {
+        elements.push(remaining)
+      }
+      break
+    }
+    const index = match.index
+    if (index > 0) {
+      elements.push(remaining.slice(0, index))
+    }
+    const token = match[0]
+    const key = `inline-${elements.length}`
+    if (token.startsWith('**') && token.endsWith('**')) {
+      elements.push(<strong key={key}>{token.slice(2, -2)}</strong>)
+    } else if (token.startsWith('*') && token.endsWith('*')) {
+      elements.push(<em key={key}>{token.slice(1, -1)}</em>)
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      elements.push(
+        <code key={key} className="problem-detail-inline-code">
+          {token.slice(1, -1)}
+        </code>,
+      )
+    } else if (
+      token.startsWith('[') &&
+      token.includes('](') &&
+      token.endsWith(')')
+    ) {
+      const textPart = token.slice(1, token.indexOf(']('))
+      const urlPart = token.slice(
+        token.indexOf('](') + 2,
+        token.length - 1,
+      )
+      elements.push(
+        <a
+          key={key}
+          href={urlPart}
+          target="_blank"
+          rel="noreferrer"
+          className="problem-detail-link"
+        >
+          {textPart}
+        </a>,
+      )
+    } else {
+      elements.push(token)
+    }
+    remaining = remaining.slice(index + token.length)
+  }
+  return elements
+}
+
+function renderProblemDescription(text: string) {
+  const nodes: ReactNode[] = []
+  const lines = text.split(/\r?\n/u)
+  let i = 0
+  let key = 0
+  let paragraphLines: string[] = []
+
+  function flushParagraph() {
+    if (paragraphLines.length === 0) return
+    const paraKey = `p-${key}`
+    key += 1
+    const content: ReactNode[] = []
+    paragraphLines.forEach((line, idx) => {
+      if (idx > 0) {
+        content.push(<br key={`${paraKey}-br-${idx}`} />)
+      }
+      content.push(...renderProblemDescriptionInline(line))
+    })
+    nodes.push(
+      <p className="problem-detail-paragraph" key={paraKey}>
+        {content}
+      </p>,
+    )
+    paragraphLines = []
+  }
+
+  while (i < lines.length) {
+    const raw = lines[i]
+    const trimmed = raw.trim()
+
+    if (trimmed === '') {
+      flushParagraph()
+      i += 1
+      continue
+    }
+
+    if (trimmed.startsWith('```')) {
+      flushParagraph()
+      const startLine = trimmed
+      const hasLang = startLine.length > 3
+      const fence = hasLang ? startLine.slice(3).trim() : ''
+      i += 1
+      const codeLines: string[] = []
+      while (i < lines.length) {
+        const current = lines[i]
+        if (current.trim().startsWith('```')) {
+          i += 1
+          break
+        }
+        codeLines.push(current)
+        i += 1
+      }
+      const content = codeLines.join('\n')
+      nodes.push(
+        <pre className="problem-detail-code" key={`code-${key}-${fence}`}>
+          <code>{content}</code>
+        </pre>,
+      )
+      key += 1
+      continue
+    }
+
+    if (/^#{1,3}\s+/u.test(trimmed)) {
+      flushParagraph()
+      const level = trimmed.startsWith('###')
+        ? 3
+        : trimmed.startsWith('##')
+          ? 2
+          : 1
+      const textContent = trimmed.replace(/^#{1,3}\s+/u, '')
+      const headingKey = `h-${key}`
+      const children = renderProblemDescriptionInline(textContent)
+      if (level === 1) {
+        nodes.push(
+          <h1 className="problem-detail-heading" key={headingKey}>
+            {children}
+          </h1>,
+        )
+      } else if (level === 2) {
+        nodes.push(
+          <h2 className="problem-detail-heading" key={headingKey}>
+            {children}
+          </h2>,
+        )
+      } else {
+        nodes.push(
+          <h3 className="problem-detail-heading" key={headingKey}>
+            {children}
+          </h3>,
+        )
+      }
+      key += 1
+      i += 1
+      continue
+    }
+
+    if (/^\|.*\|$/u.test(trimmed)) {
+      let dividerIndex = -1
+      let j = i + 1
+      while (j < lines.length) {
+        const t = lines[j].trim()
+        if (t === '') {
+          j += 1
+          continue
+        }
+        if (/^\|?[:\-|\s]+\|?$/u.test(t)) {
+          dividerIndex = j
+        }
+        break
+      }
+      if (dividerIndex !== -1) {
+        flushParagraph()
+        const headerLine = trimmed
+
+        const headerCells = headerLine
+          .replace(/^\|/u, '')
+          .replace(/\|$/u, '')
+          .split('|')
+          .map((cell) => cell.trim())
+
+        const bodyLines: string[] = []
+        j = dividerIndex + 1
+        while (j < lines.length) {
+          const t = lines[j].trim()
+          if (t === '') {
+            j += 1
+            continue
+          }
+          if (!/^\|.*\|$/u.test(t)) break
+          bodyLines.push(t)
+          j += 1
+        }
+
+        const rows = bodyLines.map((line) =>
+          line
+            .replace(/^\|/u, '')
+            .replace(/\|$/u, '')
+            .split('|')
+            .map((cell) => cell.trim()),
+        )
+
+        nodes.push(
+          <table className="problem-detail-table" key={`table-${key}`}>
+            <thead>
+              <tr>
+                {headerCells.map((cell, idx) => (
+                  <th key={`th-${key}-${idx}`}>
+                    {renderProblemDescriptionInline(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((cols, rowIdx) => (
+                <tr key={`tr-${key}-${rowIdx}`}>
+                  {cols.map((cell, colIdx) => (
+                    <td key={`td-${key}-${rowIdx}-${colIdx}`}>
+                      {renderProblemDescriptionInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>,
+        )
+        key += 1
+        i = j
+        continue
+      }
+    }
+
+    if (/^-+\s+.+/u.test(trimmed)) {
+      flushParagraph()
+      const items: string[] = []
+      while (i < lines.length) {
+        const t = lines[i].trim()
+        if (!/^-+\s+.+/u.test(t)) break
+        items.push(t.replace(/^-+\s+/u, ''))
+        i += 1
+      }
+      nodes.push(
+        <ul className="problem-detail-list" key={`ul-${key}`}>
+          {items.map((item, idx) => (
+            <li key={`li-${key}-${idx}`}>
+              {renderProblemDescriptionInline(item)}
+            </li>
+          ))}
+        </ul>,
+      )
+      key += 1
+      continue
+    }
+
+    paragraphLines.push(raw)
+    i += 1
+  }
+
+  flushParagraph()
+
+  if (nodes.length === 0) {
+    nodes.push(
+      <p className="problem-detail-paragraph" key="empty">
+        暂无题目描述
+      </p>,
+    )
+  }
+
+  return nodes
+}
 
 export default function AdminProblemSection() {
   const [problems, setProblems] = useState<ProblemItem[]>([])
@@ -376,7 +652,7 @@ export default function AdminProblemSection() {
       (problemDetailMemoryLimitDraft !== '' &&
         problemDetailMemoryLimitDraft !== problemDetail.memory_limit) ||
       problemDetailDescriptionDraft !==
-        (problemDetail.description ?? ''))
+      (problemDetail.description ?? ''))
 
   function clearProblemDetailStatusCloseTimer() {
     if (problemDetailStatusCloseTimerRef.current !== null) {
@@ -448,6 +724,45 @@ export default function AdminProblemSection() {
     problemDetailDescriptionDraft.trim().length > 0 &&
     typeof problemDetailTimeLimitDraft === 'number' &&
     typeof problemDetailMemoryLimitDraft === 'number'
+
+  function handleStatusMouseLeave() {
+    clearProblemDetailStatusCloseTimer()
+    problemDetailStatusCloseTimerRef.current = window.setTimeout(() => {
+      setProblemDetailStatusDropdownOpen(false)
+    }, 100)
+  }
+
+  function handleVisibleMouseLeave() {
+    clearProblemDetailVisibleCloseTimer()
+    problemDetailVisibleCloseTimerRef.current = window.setTimeout(() => {
+      setProblemDetailVisibleDropdownOpen(false)
+    }, 100)
+  }
+
+  function handleChangeStatusFilter(value: ProblemStatusFilter) {
+    setProblemStatusFilter(value)
+    setProblemPage(1)
+    setProblemStatusFilterOpen(false)
+  }
+
+  function handleChangeVisibleFilter(value: ProblemVisibleFilter) {
+    setProblemVisibleFilter(value)
+    setProblemPage(1)
+    setProblemVisibleFilterOpen(false)
+  }
+
+  function handleChangePageSizeDropdownOpen(
+    open: boolean,
+    event?: MouseEvent<HTMLButtonElement>,
+  ) {
+    if (open && !problemPageSizeDropdownOpen && event) {
+      const rect = event.currentTarget.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      const estimatedMenuHeight = 180
+      setProblemPageSizeDropUp(spaceBelow < estimatedMenuHeight)
+    }
+    setProblemPageSizeDropdownOpen(open)
+  }
 
   async function handleConfirmProblemDetailChanges() {
     if (!problemDetail || !problemDetailHasChanges) return
@@ -591,290 +906,6 @@ export default function AdminProblemSection() {
     }
   }
 
-  function renderProblemDescriptionInline(text: string): ReactNode[] {
-    const elements: ReactNode[] = []
-    let remaining = text
-    const pattern =
-      /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/u
-    while (remaining.length > 0) {
-      const match = remaining.match(pattern)
-      if (!match || match.index === undefined) {
-        if (remaining) {
-          elements.push(remaining)
-        }
-        break
-      }
-      const index = match.index
-      if (index > 0) {
-        elements.push(remaining.slice(0, index))
-      }
-      const token = match[0]
-      const key = `inline-${elements.length}`
-      if (token.startsWith('**') && token.endsWith('**')) {
-        elements.push(
-          <strong key={key}>{token.slice(2, -2)}</strong>,
-        )
-      } else if (token.startsWith('*') && token.endsWith('*')) {
-        elements.push(<em key={key}>{token.slice(1, -1)}</em>)
-      } else if (token.startsWith('`') && token.endsWith('`')) {
-        elements.push(
-          <code key={key} className="problem-detail-inline-code">
-            {token.slice(1, -1)}
-          </code>,
-        )
-      } else if (
-        token.startsWith('[') &&
-        token.includes('](') &&
-        token.endsWith(')')
-      ) {
-        const textPart = token.slice(1, token.indexOf(']('))
-        const urlPart = token.slice(
-          token.indexOf('](') + 2,
-          token.length - 1,
-        )
-        elements.push(
-          <a
-            key={key}
-            href={urlPart}
-            target="_blank"
-            rel="noreferrer"
-            className="problem-detail-link"
-          >
-            {textPart}
-          </a>,
-        )
-      } else {
-        elements.push(token)
-      }
-      remaining = remaining.slice(index + token.length)
-    }
-    return elements
-  }
-
-  function renderProblemDescription(text: string) {
-    const nodes: ReactNode[] = []
-    const lines = text.split(/\r?\n/u)
-    let i = 0
-    let key = 0
-    let paragraphLines: string[] = []
-
-    function flushParagraph() {
-      if (paragraphLines.length === 0) return
-      const paraKey = `p-${key}`
-      key += 1
-      const content: ReactNode[] = []
-      paragraphLines.forEach((line, idx) => {
-        if (idx > 0) {
-          content.push(<br key={`${paraKey}-br-${idx}`} />)
-        }
-        content.push(
-          ...renderProblemDescriptionInline(line),
-        )
-      })
-      nodes.push(
-        <p className="problem-detail-paragraph" key={paraKey}>
-          {content}
-        </p>,
-      )
-      paragraphLines = []
-    }
-
-    while (i < lines.length) {
-      const raw = lines[i]
-      const trimmed = raw.trim()
-
-      if (trimmed === '') {
-        flushParagraph()
-        i += 1
-        continue
-      }
-
-      if (trimmed.startsWith('```')) {
-        flushParagraph()
-        const startLine = trimmed
-        const hasLang = startLine.length > 3
-        const fence = hasLang ? startLine.slice(3).trim() : ''
-        i += 1
-        const codeLines: string[] = []
-        while (i < lines.length) {
-          const current = lines[i]
-          if (current.trim().startsWith('```')) {
-            i += 1
-            break
-          }
-          codeLines.push(current)
-          i += 1
-        }
-        const content = codeLines.join('\n')
-        nodes.push(
-          <pre className="problem-detail-code" key={`code-${key}-${fence}`}>
-            <code>{content}</code>
-          </pre>,
-        )
-        key += 1
-        continue
-      }
-
-      if (/^#{1,3}\s+/u.test(trimmed)) {
-        flushParagraph()
-        const level = trimmed.startsWith('###')
-          ? 3
-          : trimmed.startsWith('##')
-            ? 2
-            : 1
-        const textContent = trimmed.replace(/^#{1,3}\s+/u, '')
-        const headingKey = `h-${key}`
-        const children = renderProblemDescriptionInline(textContent)
-        if (level === 1) {
-          nodes.push(
-            <h1
-              className="problem-detail-heading"
-              key={headingKey}
-            >
-              {children}
-            </h1>,
-          )
-        } else if (level === 2) {
-          nodes.push(
-            <h2
-              className="problem-detail-heading"
-              key={headingKey}
-            >
-              {children}
-            </h2>,
-          )
-        } else {
-          nodes.push(
-            <h3
-              className="problem-detail-heading"
-              key={headingKey}
-            >
-              {children}
-            </h3>,
-          )
-        }
-        key += 1
-        i += 1
-        continue
-      }
-
-      if (/^\|.*\|$/u.test(trimmed)) {
-        let dividerIndex = -1
-        let j = i + 1
-        while (j < lines.length) {
-          const t = lines[j].trim()
-          if (t === '') {
-            j += 1
-            continue
-          }
-          if (/^\|?[:\-|\s]+\|?$/u.test(t)) {
-            dividerIndex = j
-          }
-          break
-        }
-        if (dividerIndex !== -1) {
-          flushParagraph()
-          const headerLine = trimmed
-
-          const headerCells = headerLine
-            .replace(/^\|/u, '')
-            .replace(/\|$/u, '')
-            .split('|')
-            .map((cell) => cell.trim())
-
-          const bodyLines: string[] = []
-          j = dividerIndex + 1
-          while (j < lines.length) {
-            const t = lines[j].trim()
-            if (t === '') {
-              j += 1
-              continue
-            }
-            if (!/^\|.*\|$/u.test(t)) break
-            bodyLines.push(t)
-            j += 1
-          }
-
-          const rows = bodyLines.map((line) =>
-            line
-              .replace(/^\|/u, '')
-              .replace(/\|$/u, '')
-              .split('|')
-              .map((cell) => cell.trim()),
-          )
-
-          nodes.push(
-            <table
-              className="problem-detail-table"
-              key={`table-${key}`}
-            >
-              <thead>
-                <tr>
-                  {headerCells.map((cell, idx) => (
-                    <th key={`th-${key}-${idx}`}>
-                      {renderProblemDescriptionInline(cell)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((cols, rowIdx) => (
-                  <tr key={`tr-${key}-${rowIdx}`}>
-                    {cols.map((cell, colIdx) => (
-                      <td key={`td-${key}-${rowIdx}-${colIdx}`}>
-                        {renderProblemDescriptionInline(cell)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>,
-          )
-          key += 1
-          i = j
-          continue
-        }
-      }
-
-      if (/^-+\s+.+/u.test(trimmed)) {
-        flushParagraph()
-        const items: string[] = []
-        while (i < lines.length) {
-          const t = lines[i].trim()
-          if (!/^-+\s+.+/u.test(t)) break
-          items.push(t.replace(/^-+\s+/u, ''))
-          i += 1
-        }
-        nodes.push(
-          <ul className="problem-detail-list" key={`ul-${key}`}>
-            {items.map((item, idx) => (
-              <li key={`li-${key}-${idx}`}>
-                {renderProblemDescriptionInline(item)}
-              </li>
-            ))}
-          </ul>,
-        )
-        key += 1
-        continue
-      }
-
-      paragraphLines.push(raw)
-      i += 1
-    }
-
-    flushParagraph()
-
-    if (nodes.length === 0) {
-      nodes.push(
-        <p className="problem-detail-paragraph" key="empty">
-          暂无题目描述
-        </p>,
-      )
-    }
-
-    return nodes
-  }
-
   async function handleUploadProblemTestcase() {
     if (!problemDetail) return
     if (!problemTestcaseFile) {
@@ -1008,1176 +1039,179 @@ export default function AdminProblemSection() {
   return (
     <>
       {problemDetailId !== null ? (
-        <div className="problem-detail">
-          <div className="problem-detail-header">
-            <button
-              type="button"
-              className="problem-detail-back-btn"
-              onClick={closeProblemDetail}
-            >
-              ← 返回题目列表
-            </button>
-            <div className="problem-detail-header-main">
-              <div className="problem-detail-title">
-                {problemDetail?.title ?? '题目详情'}
-              </div>
-              {problemDetail && (
-                <div className="problem-detail-meta">
-                  <span className="problem-detail-meta-item">
-                    ID {problemDetail.id}
-                  </span>
-                  <span className="problem-detail-dot" />
-                  <span className="problem-detail-meta-item">
-                    创建{' '}
-                    {(problemDetail.creator_realname || '未知') +
-                      ' · ' +
-                      formatDateTimeText(problemDetail.created_at)}
-                  </span>
-                  <span className="problem-detail-dot" />
-                  <span className="problem-detail-meta-item">
-                    最后更新{' '}
-                    {(problemDetail.updater_realname || '未知') +
-                      ' · ' +
-                      formatDateTimeText(problemDetail.updated_at)}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-          {problemDetailLoading && (
-            <div className="problem-detail-body">正在加载题目详情…</div>
-          )}
-          {!problemDetailLoading && problemDetail && (
-            <div className="problem-detail-body">
-              <div className="problem-detail-section">
-                <div className="problem-detail-section-title">基本信息</div>
-                <div className="problem-detail-main-row">
-                  <div className="problem-detail-grid">
-                    <div className="problem-detail-item-label">标题</div>
-                    <div className="problem-detail-item-value">
-                      {problemDetailEditing ? (
-                        <div className="problem-detail-title-input-wrapper">
-                          <input
-                            type="text"
-                            className="problem-detail-input problem-detail-input-title"
-                            maxLength={255}
-                            value={problemDetailTitleDraft}
-                            onChange={(e) =>
-                              setProblemDetailTitleDraft(e.target.value)
-                            }
-                          />
-                          <span className="problem-detail-title-counter">
-                            {problemDetailTitleDraft.length} / 255
-                          </span>
-                        </div>
-                      ) : (
-                        problemDetail.title
-                      )}
-                    </div>
-                    <div className="problem-detail-item-label">状态</div>
-                    <div className="problem-detail-item-value">
-                      {problemDetailEditing ? (
-                        <div
-                          className="problem-sort-select-wrapper"
-                          onMouseEnter={clearProblemDetailStatusCloseTimer}
-                          onMouseLeave={() => {
-                            clearProblemDetailStatusCloseTimer()
-                            problemDetailStatusCloseTimerRef.current =
-                              window.setTimeout(() => {
-                                setProblemDetailStatusDropdownOpen(false)
-                              }, 100)
-                          }}
-                        >
-                          <button
-                            type="button"
-                            className={
-                              'problem-sort-select problem-detail-select-trigger' +
-                              (problemDetailStatusDropdownOpen
-                                ? ' problem-sort-select-open'
-                                : '')
-                            }
-                            onClick={() =>
-                              setProblemDetailStatusDropdownOpen(
-                                (open) => !open,
-                              )
-                            }
-                          >
-                            {(problemDetailStatusDraft ??
-                              problemDetail.status) === 0
-                              ? '未发布'
-                              : (problemDetailStatusDraft ??
-                                  problemDetail.status) === 1
-                                ? '已发布'
-                                : '已删除'}
-                          </button>
-                          {problemDetailStatusDropdownOpen && (
-                            <div className="problem-sort-menu problem-detail-select-menu">
-                              <button
-                                type="button"
-                                className="problem-sort-menu-item"
-                                onClick={() => {
-                                  setProblemDetailStatusDraft(0)
-                                  setProblemDetailStatusDropdownOpen(false)
-                                }}
-                              >
-                                未发布
-                              </button>
-                              <button
-                                type="button"
-                                className="problem-sort-menu-item"
-                                onClick={() => {
-                                  setProblemDetailStatusDraft(1)
-                                  setProblemDetailStatusDropdownOpen(false)
-                                }}
-                              >
-                                已发布
-                              </button>
-                              <button
-                                type="button"
-                                className="problem-sort-menu-item"
-                                onClick={() => {
-                                  setProblemDetailStatusDraft(2)
-                                  setProblemDetailStatusDropdownOpen(false)
-                                }}
-                              >
-                                已删除
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span
-                          className={
-                            'problem-status-pill ' +
-                            (problemDetail.status === 0
-                              ? 'problem-status-pill-pending'
-                              : problemDetail.status === 1
-                                ? 'problem-status-pill-active'
-                                : 'problem-status-pill-deleted')
-                          }
-                        >
-                          {problemDetail.status === 0
-                            ? '未发布'
-                            : problemDetail.status === 1
-                              ? '已发布'
-                              : '已删除'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="problem-detail-item-label">
-                      非赛时可见性
-                    </div>
-                    <div className="problem-detail-item-value">
-                      {problemDetailEditing ? (
-                        <div
-                          className="problem-sort-select-wrapper"
-                          onMouseEnter={clearProblemDetailVisibleCloseTimer}
-                          onMouseLeave={() => {
-                            clearProblemDetailVisibleCloseTimer()
-                            problemDetailVisibleCloseTimerRef.current =
-                              window.setTimeout(() => {
-                                setProblemDetailVisibleDropdownOpen(false)
-                              }, 100)
-                          }}
-                        >
-                          <button
-                            type="button"
-                            className={
-                              'problem-sort-select problem-detail-select-trigger' +
-                              (problemDetailVisibleDropdownOpen
-                                ? ' problem-sort-select-open'
-                                : '')
-                            }
-                            onClick={() =>
-                              setProblemDetailVisibleDropdownOpen(
-                                (open) => !open,
-                              )
-                            }
-                          >
-                            {(problemDetailVisibleDraft ??
-                              problemDetail.visible) === 1
-                              ? '可见'
-                              : '不可见'}
-                          </button>
-                          {problemDetailVisibleDropdownOpen && (
-                            <div className="problem-sort-menu problem-detail-select-menu">
-                              <button
-                                type="button"
-                                className="problem-sort-menu-item"
-                                onClick={() => {
-                                  setProblemDetailVisibleDraft(1)
-                                  setProblemDetailVisibleDropdownOpen(false)
-                                }}
-                              >
-                                可见
-                              </button>
-                              <button
-                                type="button"
-                                className="problem-sort-menu-item"
-                                onClick={() => {
-                                  setProblemDetailVisibleDraft(0)
-                                  setProblemDetailVisibleDropdownOpen(false)
-                                }}
-                              >
-                                不可见
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span
-                          className={
-                            'problem-visible-pill ' +
-                            (problemDetail.visible === 1
-                              ? 'problem-visible-pill-on'
-                              : 'problem-visible-pill-off')
-                          }
-                        >
-                          {problemDetail.visible === 1 ? '可见' : '不可见'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="problem-detail-item-label">时间限制</div>
-                    <div className="problem-detail-item-value">
-                      {problemDetailEditing ? (
-                        <div className="problem-detail-limit-input-wrapper">
-                          <input
-                            type="number"
-                            className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
-                            min={50}
-                            max={30000}
-                            value={problemDetailTimeLimitDraft}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setProblemDetailTimeLimitDraft(
-                                v === '' ? '' : Number(v),
-                              )
-                            }}
-                            onBlur={clampProblemDetailTimeLimit}
-                          />
-                          <span className="problem-detail-limit-unit">
-                            ms
-                          </span>
-                        </div>
-                      ) : (
-                        `${problemDetail.time_limit} ms`
-                      )}
-                    </div>
-                    <div className="problem-detail-item-label">内存限制</div>
-                    <div className="problem-detail-item-value">
-                      {problemDetailEditing ? (
-                        <div className="problem-detail-limit-input-wrapper">
-                          <input
-                            type="number"
-                            className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
-                            min={128}
-                            max={1024}
-                            value={problemDetailMemoryLimitDraft}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setProblemDetailMemoryLimitDraft(
-                                v === '' ? '' : Number(v),
-                              )
-                            }}
-                            onBlur={clampProblemDetailMemoryLimit}
-                          />
-                          <span className="problem-detail-limit-unit">
-                            MB
-                          </span>
-                        </div>
-                      ) : (
-                        `${problemDetail.memory_limit} MB`
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="problem-detail-section">
-                <div className="problem-detail-section-title">题目描述</div>
-                <div className="problem-detail-description">
-                  {problemDetailEditing ? (
-                    <textarea
-                      className="problem-detail-textarea"
-                      value={problemDetailDescriptionDraft}
-                      onChange={(e) =>
-                        setProblemDetailDescriptionDraft(e.target.value)
-                      }
-                    />
-                  ) : (
-                    renderProblemDescription(problemDetail.description)
-                  )}
-                </div>
-                <div className="problem-detail-actions">
-                  {!problemDetailEditing && (
-                    <>
-                      <button
-                        type="button"
-                        className="problem-detail-edit-btn"
-                        onClick={() => {
-                          setProblemUploadModalOpen(true)
-                        }}
-                      >
-                        上传测试用例
-                      </button>
-                      <button
-                        type="button"
-                        className="problem-detail-edit-btn"
-                        onClick={() => {
-                          setProblemDetailTitleDraft(
-                            problemDetail.title ?? '',
-                          )
-                          setProblemDetailEditing(true)
-                        }}
-                      >
-                        修改
-                      </button>
-                    </>
-                  )}
-                  {problemDetailEditing && (
-                    <>
-                      <button
-                        type="button"
-                        className="problem-detail-cancel-btn"
-                        onClick={() => {
-                          setProblemDetailEditing(false)
-                          setProblemDetailStatusDropdownOpen(false)
-                          setProblemDetailVisibleDropdownOpen(false)
-                        }}
-                      >
-                        取消修改
-                      </button>
-                      <button
-                        type="button"
-                        className="problem-detail-confirm-btn"
-                        disabled={!problemDetailHasChanges}
-                        onClick={handleConfirmProblemDetailChanges}
-                      >
-                        确认修改
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <AdminProblemDetail
+          problemDetail={problemDetail}
+          problemDetailLoading={problemDetailLoading}
+          problemDetailEditing={problemDetailEditing}
+          problemDetailTitleDraft={problemDetailTitleDraft}
+          problemDetailStatusDraft={problemDetailStatusDraft}
+          problemDetailVisibleDraft={problemDetailVisibleDraft}
+          problemDetailTimeLimitDraft={problemDetailTimeLimitDraft}
+          problemDetailMemoryLimitDraft={problemDetailMemoryLimitDraft}
+          problemDetailDescriptionDraft={problemDetailDescriptionDraft}
+          problemDetailHasChanges={problemDetailHasChanges}
+          problemDetailStatusDropdownOpen={problemDetailStatusDropdownOpen}
+          problemDetailVisibleDropdownOpen={problemDetailVisibleDropdownOpen}
+          onBackToList={closeProblemDetail}
+          onOpenUploadModal={() => {
+            setProblemUploadModalOpen(true)
+          }}
+          onStartEdit={() => {
+            setProblemDetailTitleDraft(problemDetail?.title ?? '')
+            setProblemDetailEditing(true)
+          }}
+          onCancelEdit={() => {
+            setProblemDetailEditing(false)
+            setProblemDetailStatusDropdownOpen(false)
+            setProblemDetailVisibleDropdownOpen(false)
+          }}
+          onConfirmEdit={handleConfirmProblemDetailChanges}
+          onChangeTitleDraft={setProblemDetailTitleDraft}
+          onChangeStatusDraft={setProblemDetailStatusDraft}
+          onChangeVisibleDraft={setProblemDetailVisibleDraft}
+          onChangeTimeLimitDraft={setProblemDetailTimeLimitDraft}
+          onChangeMemoryLimitDraft={setProblemDetailMemoryLimitDraft}
+          onChangeDescriptionDraft={setProblemDetailDescriptionDraft}
+          onToggleStatusDropdown={() =>
+            setProblemDetailStatusDropdownOpen((open) => !open)
+          }
+          onToggleVisibleDropdown={() =>
+            setProblemDetailVisibleDropdownOpen((open) => !open)
+          }
+          onStatusMouseEnter={clearProblemDetailStatusCloseTimer}
+          onStatusMouseLeave={handleStatusMouseLeave}
+          onVisibleMouseEnter={clearProblemDetailVisibleCloseTimer}
+          onVisibleMouseLeave={handleVisibleMouseLeave}
+          onClampTimeLimit={clampProblemDetailTimeLimit}
+          onClampMemoryLimit={clampProblemDetailMemoryLimit}
+          renderDescription={renderProblemDescription}
+        />
       ) : isCreatingProblem ? (
-        <div className="problem-detail">
-          <div className="problem-detail-header">
-            <button
-              type="button"
-              className="problem-detail-back-btn"
-              onClick={cancelCreateProblem}
-              disabled={problemCreateSubmitting}
-            >
-              ← 返回题目列表
-            </button>
-            <div className="problem-detail-header-main">
-              <div className="problem-detail-title">创建题目</div>
-              <div className="problem-detail-meta">
-                <span className="problem-detail-meta-item">
-                  请填写题目信息并点击右下角确认创建
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="problem-detail-body">
-            <div className="problem-detail-section">
-              <div className="problem-detail-section-title">基本信息</div>
-              <div className="problem-detail-main-row">
-                <div className="problem-detail-grid">
-                  <div className="problem-detail-item-label">标题</div>
-                  <div className="problem-detail-item-value">
-                    <div className="problem-detail-title-input-wrapper">
-                      <input
-                        type="text"
-                        className="problem-detail-input problem-detail-input-title"
-                        maxLength={255}
-                        value={problemDetailTitleDraft}
-                        onChange={(e) =>
-                          setProblemDetailTitleDraft(e.target.value)
-                        }
-                        disabled={problemCreateSubmitting}
-                      />
-                      <span className="problem-detail-title-counter">
-                        {problemDetailTitleDraft.length} / 255
-                      </span>
-                    </div>
-                  </div>
-                  <div className="problem-detail-item-label">
-                    非赛时可见性
-                  </div>
-                  <div className="problem-detail-item-value">
-                    <div className="problem-sort-select-wrapper">
-                      <button
-                        type="button"
-                        className={
-                          'problem-sort-select problem-detail-select-trigger' +
-                          (problemDetailVisibleDropdownOpen
-                            ? ' problem-sort-select-open'
-                            : '')
-                        }
-                        onClick={() =>
-                          setProblemDetailVisibleDropdownOpen(
-                            (open) => !open,
-                          )
-                        }
-                        disabled={problemCreateSubmitting}
-                      >
-                        {(problemDetailVisibleDraft ?? 1) === 1
-                          ? '可见'
-                          : '不可见'}
-                      </button>
-                      {problemDetailVisibleDropdownOpen && (
-                        <div className="problem-sort-menu problem-detail-select-menu">
-                          <button
-                            type="button"
-                            className="problem-sort-menu-item"
-                            onClick={() => {
-                              setProblemDetailVisibleDraft(1)
-                              setProblemDetailVisibleDropdownOpen(false)
-                            }}
-                          >
-                            可见
-                          </button>
-                          <button
-                            type="button"
-                            className="problem-sort-menu-item"
-                            onClick={() => {
-                              setProblemDetailVisibleDraft(0)
-                              setProblemDetailVisibleDropdownOpen(false)
-                            }}
-                          >
-                            不可见
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="problem-detail-item-label">时间限制</div>
-                  <div className="problem-detail-item-value">
-                    <div className="problem-detail-limit-input-wrapper">
-                      <input
-                        type="number"
-                        className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
-                        min={50}
-                        max={30000}
-                        value={problemDetailTimeLimitDraft}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setProblemDetailTimeLimitDraft(
-                            v === '' ? '' : Number(v),
-                          )
-                        }}
-                        onBlur={clampProblemDetailTimeLimit}
-                        disabled={problemCreateSubmitting}
-                      />
-                      <span className="problem-detail-limit-unit">ms</span>
-                    </div>
-                  </div>
-                  <div className="problem-detail-item-label">内存限制</div>
-                  <div className="problem-detail-item-value">
-                    <div className="problem-detail-limit-input-wrapper">
-                      <input
-                        type="number"
-                        className="problem-detail-input problem-detail-input-inline problem-detail-input-with-unit"
-                        min={128}
-                        max={1024}
-                        value={problemDetailMemoryLimitDraft}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setProblemDetailMemoryLimitDraft(
-                            v === '' ? '' : Number(v),
-                          )
-                        }}
-                        onBlur={clampProblemDetailMemoryLimit}
-                        disabled={problemCreateSubmitting}
-                      />
-                      <span className="problem-detail-limit-unit">MB</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="problem-detail-section">
-              <div className="problem-detail-section-title">题目描述</div>
-              <div className="problem-detail-description">
-                <textarea
-                  className="problem-detail-textarea"
-                  value={problemDetailDescriptionDraft}
-                  onChange={(e) =>
-                    setProblemDetailDescriptionDraft(e.target.value)
-                  }
-                  disabled={problemCreateSubmitting}
-                />
-              </div>
-              <div className="problem-detail-actions">
-                <button
-                  type="button"
-                  className="problem-detail-cancel-btn"
-                  onClick={cancelCreateProblem}
-                  disabled={problemCreateSubmitting}
-                >
-                  取消创建
-                </button>
-                <button
-                  type="button"
-                  className="problem-detail-confirm-btn"
-                  disabled={!canSubmitCreateProblem}
-                  onClick={handleConfirmCreateProblem}
-                >
-                  {problemCreateSubmitting ? '创建中…' : '确认创建'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AdminProblemCreate
+          problemDetailTitleDraft={problemDetailTitleDraft}
+          problemDetailVisibleDraft={problemDetailVisibleDraft}
+          problemDetailTimeLimitDraft={problemDetailTimeLimitDraft}
+          problemDetailMemoryLimitDraft={problemDetailMemoryLimitDraft}
+          problemDetailDescriptionDraft={problemDetailDescriptionDraft}
+          problemDetailVisibleDropdownOpen={problemDetailVisibleDropdownOpen}
+          problemCreateSubmitting={problemCreateSubmitting}
+          canSubmitCreateProblem={canSubmitCreateProblem}
+          onCancelCreate={cancelCreateProblem}
+          onChangeTitleDraft={setProblemDetailTitleDraft}
+          onToggleVisibleDropdown={() =>
+            setProblemDetailVisibleDropdownOpen((open) => !open)
+          }
+          onChangeVisibleDraft={setProblemDetailVisibleDraft}
+          onChangeTimeLimitDraft={setProblemDetailTimeLimitDraft}
+          onClampTimeLimit={clampProblemDetailTimeLimit}
+          onChangeMemoryLimitDraft={setProblemDetailMemoryLimitDraft}
+          onClampMemoryLimit={clampProblemDetailMemoryLimit}
+          onChangeDescriptionDraft={setProblemDetailDescriptionDraft}
+          onConfirmCreate={handleConfirmCreateProblem}
+        />
       ) : (
-        <div className="problem-list">
-          {problemError && (
-            <div className="competition-error">{problemError}</div>
-          )}
-          {!problemError && (
-            <>
-              {problemLoading && (
-                <div className="competition-empty">正在加载题目列表…</div>
-              )}
-              <div className="problem-list-toolbar">
-                <div className="problem-batch-group">
-                  <span className="problem-batch-label">批量操作</span>
-                  <div className="problem-batch-select-wrapper">
-                    <button
-                      type="button"
-                      className={
-                        'problem-batch-select' +
-                        (problemBatchDropdownOpen
-                          ? ' problem-batch-select-open'
-                          : '')
-                      }
-                      disabled={
-                        !hasSelectedProblems || problemBatchSubmitting
-                      }
-                      onClick={() =>
-                        setProblemBatchDropdownOpen((open) => !open)
-                      }
-                    >
-                      选择操作
-                    </button>
-                    {problemBatchDropdownOpen && (
-                      <div className="problem-batch-menu">
-                        <button
-                          type="button"
-                          className="problem-batch-menu-item"
-                          onClick={async () => {
-                            setProblemBatchDropdownOpen(false)
-                            await batchUpdateSelectedProblems({
-                              status: 1,
-                            })
-                          }}
-                        >
-                          批量发布
-                        </button>
-                        <button
-                          type="button"
-                          className="problem-batch-menu-item"
-                          onClick={async () => {
-                            setProblemBatchDropdownOpen(false)
-                            await batchUpdateSelectedProblems({
-                              status: 2,
-                            })
-                          }}
-                        >
-                          批量删除
-                        </button>
-                        <button
-                          type="button"
-                          className="problem-batch-menu-item"
-                          onClick={async () => {
-                            setProblemBatchDropdownOpen(false)
-                            await batchUpdateSelectedProblems({
-                              status: 0,
-                            })
-                          }}
-                        >
-                          批量设为未发布
-                        </button>
-                        <button
-                          type="button"
-                          className="problem-batch-menu-item"
-                          onClick={async () => {
-                            setProblemBatchDropdownOpen(false)
-                            await batchUpdateSelectedProblems({
-                              visible: 0,
-                            })
-                          }}
-                        >
-                          批量设为不可见
-                        </button>
-                        <button
-                          type="button"
-                          className="problem-batch-menu-item"
-                          onClick={async () => {
-                            setProblemBatchDropdownOpen(false)
-                            await batchUpdateSelectedProblems({
-                              visible: 1,
-                            })
-                          }}
-                        >
-                          批量设为可见
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="problem-toolbar-right">
-                  <div className="problem-search-group">
-                    <button
-                      type="button"
-                      className="competition-refresh-btn"
-                      onClick={resetProblemFilters}
-                      disabled={problemLoading}
-                      aria-label="重置筛选并刷新题目列表"
-                      title="重置筛选并刷新"
-                    >
-                      ↻
-                    </button>
-                    <div className="problem-search-input-wrapper">
-                      <button
-                        type="button"
-                        className="problem-search-icon-btn"
-                        onClick={applyProblemTitleSearch}
-                        disabled={problemLoading}
-                        aria-label="搜索"
-                        title="搜索"
-                      >
-                        🔍
-                      </button>
-                      <input
-                        type="text"
-                        className="problem-search-input"
-                        placeholder="搜索题目标题"
-                        value={problemTitleFilterInput}
-                        onChange={(e) =>
-                          setProblemTitleFilterInput(e.target.value)
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            applyProblemTitleSearch()
-                          }
-                        }}
-                        disabled={problemLoading}
-                      />
-                    </div>
-                  </div>
-                  <div className="problem-sort-group">
-                    <span className="problem-sort-label">排序</span>
-                    <div className="problem-sort-select-wrapper">
-                      <button
-                        type="button"
-                        className={
-                          'problem-sort-select' +
-                          (problemOrderDropdownOpen
-                            ? ' problem-sort-select-open'
-                            : '')
-                        }
-                        onClick={() =>
-                          setProblemOrderDropdownOpen((open) => !open)
-                        }
-                        disabled={problemLoading}
-                      >
-                        {problemOrderLabel}
-                      </button>
-                      {problemOrderDropdownOpen && (
-                        <div className="problem-sort-menu">
-                          <button
-                            type="button"
-                            className={
-                              'problem-sort-menu-item' +
-                              (problemOrderField === 'id'
-                                ? ' problem-sort-menu-item-active'
-                                : '')
-                            }
-                            onClick={() => {
-                              setProblemOrderField('id')
-                              setProblemOrderDropdownOpen(false)
-                            }}
-                          >
-                            按 ID
-                          </button>
-                          <button
-                            type="button"
-                            className={
-                              'problem-sort-menu-item' +
-                              (problemOrderField === 'created_at'
-                                ? ' problem-sort-menu-item-active'
-                                : '')
-                            }
-                            onClick={() => {
-                              setProblemOrderField('created_at')
-                              setProblemOrderDropdownOpen(false)
-                            }}
-                          >
-                            按创建时间
-                          </button>
-                          <button
-                            type="button"
-                            className={
-                              'problem-sort-menu-item' +
-                              (problemOrderField === 'updated_at'
-                                ? ' problem-sort-menu-item-active'
-                                : '')
-                            }
-                            onClick={() => {
-                              setProblemOrderField('updated_at')
-                              setProblemOrderDropdownOpen(false)
-                            }}
-                          >
-                            按更新时间
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      className={
-                        'problem-sort-order-btn' +
-                        (!problemOrderDesc
-                          ? ' problem-sort-order-btn-active'
-                          : '')
-                      }
-                      onClick={() => setProblemOrderDesc(false)}
-                      disabled={problemLoading}
-                    >
-                      升序
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        'problem-sort-order-btn' +
-                        (problemOrderDesc
-                          ? ' problem-sort-order-btn-active'
-                          : '')
-                      }
-                      onClick={() => setProblemOrderDesc(true)}
-                      disabled={problemLoading}
-                    >
-                      降序
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="problem-list-table">
-                <div className="problem-list-row problem-list-row-header">
-                  <div className="problem-col-select">
-                    <input
-                      type="checkbox"
-                      ref={problemHeaderSelectRef}
-                      className="problem-select-checkbox"
-                      checked={isAllCurrentPageSelected}
-                      disabled={
-                        problemLoading || problems.length === 0
-                      }
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedProblemIds(problems.map((p) => p.id))
-                        } else {
-                          setSelectedProblemIds([])
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="problem-col-id">ID</div>
-                  <div className="problem-col-title">标题</div>
-                  <div className="problem-col-status-header">
-                    <div className="problem-filter-header">
-                      <span>状态</span>
-                      <div className="problem-filter-wrapper">
-                        <button
-                          type="button"
-                          className={
-                            'problem-filter-icon-btn' +
-                            (problemStatusFilter !== 'all'
-                              ? ' problem-filter-icon-btn-active'
-                              : '') +
-                            (problemStatusFilterOpen
-                              ? ' problem-filter-icon-btn-open'
-                              : '')
-                          }
-                          onClick={() =>
-                            setProblemStatusFilterOpen((open) => !open)
-                          }
-                          disabled={problemLoading}
-                          aria-label={problemStatusFilterLabel}
-                        />
-                        {problemStatusFilterOpen && (
-                          <div className="problem-filter-menu">
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemStatusFilter === 'all'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemStatusFilter('all')
-                                setProblemPage(1)
-                                setProblemStatusFilterOpen(false)
-                              }}
-                            >
-                              全部
-                            </button>
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemStatusFilter === '0'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemStatusFilter('0')
-                                setProblemPage(1)
-                                setProblemStatusFilterOpen(false)
-                              }}
-                            >
-                              未发布
-                            </button>
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemStatusFilter === '1'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemStatusFilter('1')
-                                setProblemPage(1)
-                                setProblemStatusFilterOpen(false)
-                              }}
-                            >
-                              已发布
-                            </button>
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemStatusFilter === '2'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemStatusFilter('2')
-                                setProblemPage(1)
-                                setProblemStatusFilterOpen(false)
-                              }}
-                            >
-                              已删除
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="problem-col-visible-header">
-                    <div className="problem-filter-header">
-                      <span>非赛时可见性</span>
-                      <div className="problem-filter-wrapper">
-                        <button
-                          type="button"
-                          className={
-                            'problem-filter-icon-btn' +
-                            (problemVisibleFilter !== 'all'
-                              ? ' problem-filter-icon-btn-active'
-                              : '') +
-                            (problemVisibleFilterOpen
-                              ? ' problem-filter-icon-btn-open'
-                              : '')
-                          }
-                          onClick={() =>
-                            setProblemVisibleFilterOpen((open) => !open)
-                          }
-                          disabled={problemLoading}
-                          aria-label={problemVisibleFilterLabel}
-                        />
-                        {problemVisibleFilterOpen && (
-                          <div className="problem-filter-menu">
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemVisibleFilter === 'all'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemVisibleFilter('all')
-                                setProblemPage(1)
-                                setProblemVisibleFilterOpen(false)
-                              }}
-                            >
-                              全部
-                            </button>
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemVisibleFilter === '1'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemVisibleFilter('1')
-                                setProblemPage(1)
-                                setProblemVisibleFilterOpen(false)
-                              }}
-                            >
-                              可见
-                            </button>
-                            <button
-                              type="button"
-                              className={
-                                'problem-filter-menu-item' +
-                                (problemVisibleFilter === '0'
-                                  ? ' problem-filter-menu-item-active'
-                                  : '')
-                              }
-                              onClick={() => {
-                                setProblemVisibleFilter('0')
-                                setProblemPage(1)
-                                setProblemVisibleFilterOpen(false)
-                              }}
-                            >
-                              不可见
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="problem-col-limits">限制</div>
-                  <div className="problem-col-time">创建时间</div>
-                  <div className="problem-col-time">更新时间</div>
-                  <div className="problem-col-actions">操作</div>
-                </div>
-                <div className="problem-list-body">
-                  {!problemLoading && problems.length === 0 && (
-                    <div className="problem-list-row problem-list-row-empty">
-                      <div className="problem-col-select" />
-                      <div className="problem-col-id" />
-                      <div className="problem-col-title">暂无题目</div>
-                      <div className="problem-col-status" />
-                      <div className="problem-col-visible" />
-                      <div className="problem-col-limits" />
-                      <div className="problem-col-time" />
-                      <div className="problem-col-time" />
-                      <div className="problem-col-actions" />
-                    </div>
-                  )}
-                  {!problemLoading &&
-                    problems.length > 0 &&
-                    problems.map((p) => (
-                      <div
-                        key={p.id}
-                        className="problem-list-row"
-                        onClick={() => {
-                          void openProblemDetail(p)
-                        }}
-                      >
-                        <div className="problem-col-select">
-                          <input
-                            type="checkbox"
-                            className="problem-select-checkbox"
-                            checked={selectedProblemIds.includes(p.id)}
-                            disabled={problemLoading}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedProblemIds((prev) =>
-                                  prev.includes(p.id)
-                                    ? prev
-                                    : [...prev, p.id],
-                                )
-                              } else {
-                                setSelectedProblemIds((prev) =>
-                                  prev.filter((id) => id !== p.id),
-                                )
-                              }
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                            }}
-                          />
-                        </div>
-                        <div className="problem-col-id">{p.id}</div>
-                        <div className="problem-col-title">{p.title}</div>
-                        <div className="problem-col-status">
-                          <span
-                            className={
-                              'problem-status-pill ' +
-                              (p.status === 0
-                                ? 'problem-status-pill-pending'
-                                : p.status === 1
-                                  ? 'problem-status-pill-active'
-                                  : 'problem-status-pill-deleted')
-                            }
-                          >
-                            {p.status === 0
-                              ? '未发布'
-                              : p.status === 1
-                                ? '已发布'
-                                : '已删除'}
-                          </span>
-                        </div>
-                        <div className="problem-col-visible">
-                          <span
-                            className={
-                              'problem-visible-pill ' +
-                              (p.visible === 1
-                                ? 'problem-visible-pill-on'
-                                : 'problem-visible-pill-off')
-                            }
-                          >
-                            {p.visible === 1 ? '可见' : '不可见'}
-                          </span>
-                        </div>
-                        <div className="problem-col-limits">
-                          {p.time_limit} ms / {p.memory_limit} MB
-                        </div>
-                        <div className="problem-col-time">
-                          {formatDateTimeText(p.created_at)}
-                        </div>
-                        <div className="problem-col-time">
-                          {formatDateTimeText(p.updated_at)}
-                        </div>
-                        <div className="problem-col-actions">
-                          <button
-                            type="button"
-                            className="problem-action-btn"
-                            aria-label="查看详情"
-                            title="查看详情"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void openProblemDetail(p)
-                            }}
-                          >
-                            👁
-                          </button>
-                          <button
-                            type="button"
-                            className="problem-action-btn problem-action-danger"
-                            aria-label="删除题目"
-                            title="删除题目"
-                            disabled={p.status === 2}
-                          >
-                            🗑
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-              <div className="competition-pagination">
-                <button
-                  type="button"
-                  className="problem-add-button"
-                  aria-label="新增题目"
-                  title="新增题目"
-                  disabled={problemLoading}
-                  onClick={startCreateProblem}
-                >
-                  ＋
-                </button>
-                <div className="problem-page-size-group">
-                  <span className="problem-page-size-label">每页</span>
-                  <div className="problem-page-size-select-wrapper">
-                    <button
-                      type="button"
-                      className={
-                        'problem-sort-select problem-page-size-select' +
-                        (problemPageSizeDropdownOpen
-                          ? ' problem-sort-select-open'
-                          : '')
-                      }
-                      onClick={(e) => {
-                        if (!problemPageSizeDropdownOpen) {
-                          const rect =
-                            e.currentTarget.getBoundingClientRect()
-                          const spaceBelow =
-                            window.innerHeight - rect.bottom
-                          const estimatedMenuHeight = 180
-                          setProblemPageSizeDropUp(
-                            spaceBelow < estimatedMenuHeight,
-                          )
-                        }
-                        setProblemPageSizeDropdownOpen((open) => !open)
-                      }}
-                      disabled={problemLoading}
-                    >
-                      {problemPageSizeLabel}
-                    </button>
-                    {problemPageSizeDropdownOpen && (
-                      <div
-                        className={
-                          'problem-sort-menu' +
-                          (problemPageSizeDropUp
-                            ? ' problem-sort-menu-up'
-                            : '')
-                        }
-                      >
-                        {[10, 20, 50, 100].map((size) => (
-                          <button
-                            key={size}
-                            type="button"
-                            className={
-                              'problem-sort-menu-item' +
-                              (problemPageSize === size
-                                ? ' problem-sort-menu-item-active'
-                                : '')
-                            }
-                            onClick={() => {
-                              setProblemPageSize(size)
-                              setProblemPage(1)
-                              setProblemPageSizeDropdownOpen(false)
-                            }}
-                          >
-                            {size}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <span className="problem-page-size-label">条</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setProblemPage((p) => Math.max(1, p - 1))
-                  }
-                  disabled={problemPage <= 1 || problemLoading}
-                >
-                  上一页
-                </button>
-                <span className="competition-page-info">
-                  第 {problemPage} / {problemMaxPage} 页
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setProblemPage((p) =>
-                      Math.min(problemMaxPage, p + 1),
-                    )
-                  }
-                  disabled={
-                    problemPage >= problemMaxPage || problemLoading
-                  }
-                >
-                  下一页
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <AdminProblemList
+          problems={problems}
+          problemLoading={problemLoading}
+          problemError={problemError}
+          problemPage={problemPage}
+          problemMaxPage={problemMaxPage}
+          problemPageSize={problemPageSize}
+          problemPageSizeLabel={problemPageSizeLabel}
+          problemPageSizeDropdownOpen={problemPageSizeDropdownOpen}
+          problemPageSizeDropUp={problemPageSizeDropUp}
+          problemOrderField={problemOrderField}
+          problemOrderDesc={problemOrderDesc}
+          problemOrderLabel={problemOrderLabel}
+          problemOrderDropdownOpen={problemOrderDropdownOpen}
+          problemStatusFilter={problemStatusFilter}
+          problemStatusFilterLabel={problemStatusFilterLabel}
+          problemStatusFilterOpen={problemStatusFilterOpen}
+          problemVisibleFilter={problemVisibleFilter}
+          problemVisibleFilterLabel={problemVisibleFilterLabel}
+          problemVisibleFilterOpen={problemVisibleFilterOpen}
+          hasSelectedProblems={hasSelectedProblems}
+          isAllCurrentPageSelected={isAllCurrentPageSelected}
+          selectedProblemIds={selectedProblemIds}
+          onToggleBatchDropdown={() =>
+            setProblemBatchDropdownOpen((open) => !open)
+          }
+          problemBatchDropdownOpen={problemBatchDropdownOpen}
+          problemBatchSubmitting={problemBatchSubmitting}
+          onBatchPublish={async () => {
+            setProblemBatchDropdownOpen(false)
+            await batchUpdateSelectedProblems({ status: 1 })
+          }}
+          onBatchDelete={async () => {
+            setProblemBatchDropdownOpen(false)
+            await batchUpdateSelectedProblems({ status: 2 })
+          }}
+          onBatchUnpublish={async () => {
+            setProblemBatchDropdownOpen(false)
+            await batchUpdateSelectedProblems({ status: 0 })
+          }}
+          onBatchInvisible={async () => {
+            setProblemBatchDropdownOpen(false)
+            await batchUpdateSelectedProblems({ visible: 0 })
+          }}
+          onBatchVisible={async () => {
+            setProblemBatchDropdownOpen(false)
+            await batchUpdateSelectedProblems({ visible: 1 })
+          }}
+          problemTitleFilterInput={problemTitleFilterInput}
+          onChangeTitleFilterInput={setProblemTitleFilterInput}
+          onApplyTitleSearch={applyProblemTitleSearch}
+          onResetFilters={resetProblemFilters}
+          onToggleOrderDropdown={() =>
+            setProblemOrderDropdownOpen((open) => !open)
+          }
+          onChangeOrderField={(field) => {
+            setProblemOrderField(field)
+            setProblemOrderDropdownOpen(false)
+          }}
+          onChangeOrderDesc={setProblemOrderDesc}
+          onToggleStatusFilterOpen={() =>
+            setProblemStatusFilterOpen((open) => !open)
+          }
+          onChangeStatusFilter={handleChangeStatusFilter}
+          onToggleVisibleFilterOpen={() =>
+            setProblemVisibleFilterOpen((open) => !open)
+          }
+          onChangeVisibleFilter={handleChangeVisibleFilter}
+          onToggleSelectAll={(checked) => {
+            if (checked) {
+              setSelectedProblemIds(problems.map((p) => p.id))
+            } else {
+              setSelectedProblemIds([])
+            }
+          }}
+          onToggleSelectOne={(id, checked) => {
+            if (checked) {
+              setSelectedProblemIds((prev) =>
+                prev.includes(id) ? prev : [...prev, id],
+              )
+            } else {
+              setSelectedProblemIds((prev) =>
+                prev.filter((pid) => pid !== id),
+              )
+            }
+          }}
+          onOpenProblemDetail={(problem) => {
+            void openProblemDetail(problem)
+          }}
+          onStartCreateProblem={startCreateProblem}
+          onChangePageSizeDropdownOpen={handleChangePageSizeDropdownOpen}
+          onChangePageSize={(size) => {
+            setProblemPageSize(size)
+            setProblemPage(1)
+            setProblemPageSizeDropdownOpen(false)
+          }}
+          onChangePage={(page) => {
+            setProblemPage(page)
+          }}
+          problemLoadingForControls={problemLoading}
+          headerCheckboxRef={problemHeaderSelectRef}
+        />
       )}
       {problemUploadModalOpen && (
         <div className="admin-modal-overlay">
