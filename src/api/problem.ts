@@ -1,4 +1,10 @@
-import { getJson, postFormData, postJsonWithHeaders, putJson } from './http'
+import {
+  getJson,
+  postFormData,
+  postJsonWithHeaders,
+  putJson,
+  putJsonWithHeaders,
+} from './http'
 
 export type ProblemItem = {
   id: number
@@ -94,13 +100,6 @@ export type UpdateProblemResponse = {
   message: string
 }
 
-export async function updateProblem(body: UpdateProblemRequest) {
-  return putJson<UpdateProblemResponse>(
-    '/api/online-judge-controller?cmd=UpdateProblem',
-    body,
-  )
-}
-
 export type UploadProblemTestcaseResponse = {
   code: number
   message: string
@@ -142,6 +141,23 @@ async function computeDescriptionHash(description: string): Promise<string> {
     hex += bytes[i].toString(16).padStart(2, '0')
   }
   return hex
+}
+
+export async function updateProblem(body: UpdateProblemRequest) {
+  if (typeof body.description === 'string') {
+    const hash = await computeDescriptionHash(body.description)
+    return putJsonWithHeaders<UpdateProblemResponse>(
+      '/api/online-judge-controller?cmd=UpdateProblem',
+      body,
+      {
+        'X-Description-Hash': hash,
+      },
+    )
+  }
+  return putJson<UpdateProblemResponse>(
+    '/api/online-judge-controller?cmd=UpdateProblem',
+    body,
+  )
 }
 
 export async function createProblem(body: CreateProblemRequest) {

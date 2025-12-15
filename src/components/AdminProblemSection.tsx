@@ -469,6 +469,13 @@ export default function AdminProblemSection() {
     }
 
     if (
+      problemDetailDescriptionDraft !==
+      (problemDetail.description ?? '')
+    ) {
+      body.description = problemDetailDescriptionDraft
+    }
+
+    if (
       problemDetailStatusDraft !== null &&
       problemDetailStatusDraft !== problemDetail.status
     ) {

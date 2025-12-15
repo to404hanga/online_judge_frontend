@@ -201,6 +201,46 @@ export async function putJson<T>(path: string, body: unknown): Promise<ApiResult
   return result
 }
 
+export async function putJsonWithHeaders<T>(
+  path: string,
+  body: unknown,
+  extraHeaders: Record<string, string>,
+): Promise<ApiResult<T>> {
+  const url = API_BASE_URL + path
+  const headers = buildHeaders({
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  })
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers,
+    credentials: 'include',
+    mode: 'cors',
+    body: JSON.stringify(body ?? {}),
+  })
+
+  const headerToken = res.headers.get('X-JWT-Token')
+  if (headerToken) setToken(headerToken)
+
+  let data: T | null = null
+  try {
+    data = (await res.json()) as T
+  } catch {
+    data = null
+  }
+
+  const result = {
+    ok: res.ok,
+    data,
+    status: res.status,
+    token: headerToken,
+  }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
+}
+
 // 对外提供获取当前 JWT 的方法
 export function getAuthToken(): string | null {
   return getToken()
