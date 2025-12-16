@@ -29,6 +29,7 @@ type AdminProblemListProps = {
   isAllCurrentPageSelected: boolean
   selectedProblemIds: number[]
   onToggleBatchDropdown: () => void
+  onDeleteProblem: (problem: ProblemItem) => void
   problemBatchDropdownOpen: boolean
   problemBatchSubmitting: boolean
   onBatchPublish: () => void
@@ -86,6 +87,7 @@ export default function AdminProblemList(props: AdminProblemListProps) {
     isAllCurrentPageSelected,
     selectedProblemIds,
     onToggleBatchDropdown,
+    onDeleteProblem,
     problemBatchDropdownOpen,
     problemBatchSubmitting,
     onBatchPublish,
@@ -592,6 +594,10 @@ export default function AdminProblemList(props: AdminProblemListProps) {
                         className="problem-action-btn problem-action-danger"
                         aria-label="删除题目"
                         title="删除题目"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeleteProblem(p)
+                        }}
                         disabled={p.status === 2}
                       >
                         🗑

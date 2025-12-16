@@ -367,6 +367,8 @@ export default function AdminProblemSection() {
   const problemTestcaseInputRef = useRef<HTMLInputElement | null>(null)
   const [problemUploadModalOpen, setProblemUploadModalOpen] =
     useState(false)
+  const [problemDeleteConfirm, setProblemDeleteConfirm] =
+    useState<ProblemItem | null>(null)
   const [isCreatingProblem, setIsCreatingProblem] = useState(false)
   const [problemCreateSubmitting, setProblemCreateSubmitting] =
     useState(false)
@@ -550,6 +552,47 @@ export default function AdminProblemSection() {
       window.alert('批量操作失败，请稍后重试')
     } finally {
       setProblemBatchSubmitting(false)
+    }
+  }
+
+  async function handleDeleteProblem(problem: ProblemItem) {
+    if (problem.status === 2) return
+    setProblemDeleteConfirm(problem)
+  }
+
+  async function handleConfirmDeleteProblem() {
+    if (!problemDeleteConfirm) return
+    const target = problemDeleteConfirm
+    try {
+      const res = await updateProblem({
+        problem_id: target.id,
+        status: 2,
+      })
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        const msg = res.data?.message ?? '删除题目失败'
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage(msg)
+        setProblemDetailAlertOpen(true)
+        return
+      }
+      await loadProblems(
+        problemPage,
+        problemPageSize,
+        problemOrderField,
+        problemOrderDesc,
+        problemStatusFilter,
+        problemVisibleFilter,
+        problemTitleFilter,
+      )
+      setSelectedProblemIds((prev) =>
+        prev.filter((id) => id !== target.id),
+      )
+    } catch {
+      setProblemDetailAlertTitle('操作失败')
+      setProblemDetailAlertMessage('删除题目失败，请稍后重试')
+      setProblemDetailAlertOpen(true)
+    } finally {
+      setProblemDeleteConfirm(null)
     }
   }
 
@@ -1199,6 +1242,9 @@ export default function AdminProblemSection() {
           onOpenProblemDetail={(problem) => {
             void openProblemDetail(problem)
           }}
+          onDeleteProblem={(problem) => {
+            void handleDeleteProblem(problem)
+          }}
           onStartCreateProblem={startCreateProblem}
           onChangePageSizeDropdownOpen={handleChangePageSizeDropdownOpen}
           onChangePageSize={(size) => {
@@ -1257,6 +1303,32 @@ export default function AdminProblemSection() {
                 disabled={problemTestcaseUploading || !problemTestcaseFile}
               >
                 {problemTestcaseUploading ? '上传中…' : '确认上传'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {problemDeleteConfirm && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal">
+            <div className="admin-modal-title">确认删除</div>
+            <div className="admin-modal-message">
+              确认要删除题目（ID: {problemDeleteConfirm.id}）吗？
+            </div>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="problem-detail-edit-btn"
+                onClick={() => setProblemDeleteConfirm(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="admin-modal-primary-btn"
+                onClick={handleConfirmDeleteProblem}
+              >
+                确认删除
               </button>
             </div>
           </div>
