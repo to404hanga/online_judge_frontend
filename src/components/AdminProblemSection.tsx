@@ -354,10 +354,8 @@ export default function AdminProblemSection() {
   ] = useState(false)
   const problemDetailStatusCloseTimerRef = useRef<number | null>(null)
   const problemDetailVisibleCloseTimerRef = useRef<number | null>(null)
-  const [problemDetailAlertOpen, setProblemDetailAlertOpen] =
-    useState(false)
-  const [problemDetailAlertTitle, setProblemDetailAlertTitle] =
-    useState('')
+  const [problemDetailAlertOpen, setProblemDetailAlertOpen] = useState(false)
+  const [problemDetailAlertTitle, setProblemDetailAlertTitle] = useState('')
   const [problemDetailAlertMessage, setProblemDetailAlertMessage] =
     useState('')
   const [problemTestcaseFile, setProblemTestcaseFile] =
@@ -536,7 +534,9 @@ export default function AdminProblemSection() {
           res.data.code !== 200,
       )
       if (failed.length > 0) {
-        window.alert('部分题目更新失败，请稍后重试')
+        setProblemDetailAlertTitle('操作失败')
+        setProblemDetailAlertMessage('部分题目更新失败，请稍后重试')
+        setProblemDetailAlertOpen(true)
       }
       await loadProblems(
         problemPage,
@@ -549,7 +549,9 @@ export default function AdminProblemSection() {
       )
       setSelectedProblemIds([])
     } catch {
-      window.alert('批量操作失败，请稍后重试')
+      setProblemDetailAlertTitle('操作失败')
+      setProblemDetailAlertMessage('批量操作失败，请稍后重试')
+      setProblemDetailAlertOpen(true)
     } finally {
       setProblemBatchSubmitting(false)
     }
