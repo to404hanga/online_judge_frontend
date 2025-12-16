@@ -54,12 +54,32 @@ export async function fetchCompetitionList(page: number, pageSize: number) {
   })
 }
 
+export async function fetchUserCompetitionList(
+  page: number,
+  pageSize: number,
+  orderBy: CompetitionOrderBy,
+  desc: boolean,
+  phase?: number,
+  name?: string,
+) {
+  return getJson<CompetitionListResponse>('/api/online-judge-controller', {
+    cmd: 'UserGetCompetitionList',
+    page,
+    page_size: pageSize,
+    order_by: orderBy,
+    desc,
+    phase,
+    name,
+  })
+}
+
 export async function fetchAdminCompetitionList(
   page: number,
   pageSize: number,
   orderBy: CompetitionOrderBy,
   desc: boolean,
   status?: number,
+  phase?: number,
   name?: string,
 ) {
   return getJson<CompetitionListResponse>('/api/online-judge-controller', {
@@ -69,6 +89,7 @@ export async function fetchAdminCompetitionList(
     order_by: orderBy,
     desc,
     status,
+    phase,
     name,
   })
 }

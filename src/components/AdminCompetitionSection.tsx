@@ -14,6 +14,7 @@ import {
 import { formatDateTimeText } from '../utils/datetime'
 
 type CompetitionStatusFilter = 'all' | '0' | '1' | '2'
+type CompetitionPhaseFilter = 'all' | '0' | '1' | '2'
 type CompetitionRuntimeTone = 'upcoming' | 'running' | 'finished'
 
 export default function AdminCompetitionSection() {
@@ -31,6 +32,10 @@ export default function AdminCompetitionSection() {
   const [competitionStatusFilter, setCompetitionStatusFilter] =
     useState<CompetitionStatusFilter>('all')
   const [competitionStatusFilterOpen, setCompetitionStatusFilterOpen] =
+    useState(false)
+  const [competitionPhaseFilter, setCompetitionPhaseFilter] =
+    useState<CompetitionPhaseFilter>('all')
+  const [competitionPhaseFilterOpen, setCompetitionPhaseFilterOpen] =
     useState(false)
   const [competitionNameFilter, setCompetitionNameFilter] = useState('')
   const [competitionNameFilterInput, setCompetitionNameFilterInput] =
@@ -59,6 +64,7 @@ export default function AdminCompetitionSection() {
       competitionOrderField,
       competitionOrderDesc,
       competitionStatusFilter,
+      competitionPhaseFilter,
       competitionNameFilter,
     )
   }, [
@@ -67,6 +73,7 @@ export default function AdminCompetitionSection() {
     competitionOrderField,
     competitionOrderDesc,
     competitionStatusFilter,
+    competitionPhaseFilter,
     competitionNameFilter,
     competitionRefreshToken,
   ])
@@ -77,6 +84,7 @@ export default function AdminCompetitionSection() {
     orderBy: CompetitionOrderBy,
     desc: boolean,
     statusFilter: CompetitionStatusFilter,
+    phaseFilter: CompetitionPhaseFilter,
     nameFilter: string,
   ) {
     setCompetitionLoading(true)
@@ -84,6 +92,8 @@ export default function AdminCompetitionSection() {
     try {
       const statusValue =
         statusFilter === 'all' ? undefined : Number(statusFilter)
+      const phaseValue =
+        phaseFilter === 'all' ? undefined : Number(phaseFilter)
       const nameValue =
         nameFilter && nameFilter.trim().length > 0
           ? nameFilter.trim()
@@ -94,6 +104,7 @@ export default function AdminCompetitionSection() {
         orderBy,
         desc,
         statusValue,
+        phaseValue,
         nameValue,
       )
       if (!res.ok || !res.data || !res.data.data) {
@@ -140,6 +151,15 @@ export default function AdminCompetitionSection() {
           ? '仅已发布'
           : '仅已删除'
 
+  const competitionPhaseFilterLabel =
+    competitionPhaseFilter === 'all'
+      ? '全部比赛'
+      : competitionPhaseFilter === '0'
+        ? '仅未开始'
+        : competitionPhaseFilter === '1'
+          ? '仅进行中'
+          : '仅已结束'
+
   const competitionPageSizeLabel = `${competitionPageSize}`
 
   const hasSelectedCompetitions = selectedCompetitionIds.length > 0
@@ -164,10 +184,12 @@ export default function AdminCompetitionSection() {
     setCompetitionOrderField('id')
     setCompetitionOrderDesc(false)
     setCompetitionStatusFilter('all')
+    setCompetitionPhaseFilter('all')
     setCompetitionNameFilter('')
     setCompetitionNameFilterInput('')
     setCompetitionOrderDropdownOpen(false)
     setCompetitionStatusFilterOpen(false)
+    setCompetitionPhaseFilterOpen(false)
     setCompetitionPageSizeDropdownOpen(false)
     setCompetitionBatchDropdownOpen(false)
     setSelectedCompetitionIds([])
@@ -178,6 +200,12 @@ export default function AdminCompetitionSection() {
     setCompetitionStatusFilter(value)
     setCompetitionPage(1)
     setCompetitionStatusFilterOpen(false)
+  }
+
+  function handleChangePhaseFilter(value: CompetitionPhaseFilter) {
+    setCompetitionPhaseFilter(value)
+    setCompetitionPage(1)
+    setCompetitionPhaseFilterOpen(false)
   }
 
   function handleChangePageSizeDropdownOpen(
@@ -268,6 +296,7 @@ export default function AdminCompetitionSection() {
         competitionOrderField,
         competitionOrderDesc,
         competitionStatusFilter,
+        competitionPhaseFilter,
         competitionNameFilter,
       )
       setSelectedCompetitionIds([])
@@ -592,7 +621,80 @@ export default function AdminCompetitionSection() {
                 </div>
               </div>
               <div className="competition-admin-col-runtime-status">
-                进行状态
+                <div className="problem-filter-header">
+                  <span>进行状态</span>
+                  <div className="problem-filter-wrapper">
+                    <button
+                      type="button"
+                      className={
+                        'problem-filter-icon-btn' +
+                        (competitionPhaseFilter !== 'all'
+                          ? ' problem-filter-icon-btn-active'
+                          : '') +
+                        (competitionPhaseFilterOpen
+                          ? ' problem-filter-icon-btn-open'
+                          : '')
+                      }
+                      onClick={() =>
+                        setCompetitionPhaseFilterOpen((open) => !open)
+                      }
+                      disabled={competitionLoading}
+                      aria-label={competitionPhaseFilterLabel}
+                    />
+                    {competitionPhaseFilterOpen && (
+                      <div className="problem-filter-menu">
+                        <button
+                          type="button"
+                          className={
+                            'problem-filter-menu-item' +
+                            (competitionPhaseFilter === 'all'
+                              ? ' problem-filter-menu-item-active'
+                              : '')
+                          }
+                          onClick={() => handleChangePhaseFilter('all')}
+                        >
+                          全部
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            'problem-filter-menu-item' +
+                            (competitionPhaseFilter === '0'
+                              ? ' problem-filter-menu-item-active'
+                              : '')
+                          }
+                          onClick={() => handleChangePhaseFilter('0')}
+                        >
+                          未开始
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            'problem-filter-menu-item' +
+                            (competitionPhaseFilter === '1'
+                              ? ' problem-filter-menu-item-active'
+                              : '')
+                          }
+                          onClick={() => handleChangePhaseFilter('1')}
+                        >
+                          进行中
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            'problem-filter-menu-item' +
+                            (competitionPhaseFilter === '2'
+                              ? ' problem-filter-menu-item-active'
+                              : '')
+                          }
+                          onClick={() => handleChangePhaseFilter('2')}
+                        >
+                          已结束
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="competition-admin-col-time">开始时间</div>
               <div className="competition-admin-col-time">结束时间</div>
