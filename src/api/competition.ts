@@ -33,7 +33,7 @@ export type CompetitionOrderBy =
   | 'updated_at'
 
 export type UpdateCompetitionRequest = {
-  competition_id: number
+  id: number
   name?: string
   status?: number
   start_time?: string

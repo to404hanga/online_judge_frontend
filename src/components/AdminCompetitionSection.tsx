@@ -17,6 +17,64 @@ type CompetitionStatusFilter = 'all' | '0' | '1' | '2'
 type CompetitionPhaseFilter = 'all' | '0' | '1' | '2'
 type CompetitionRuntimeTone = 'upcoming' | 'running' | 'finished'
 
+const COMPETITION_TIMEZONE_OPTIONS = [
+  { label: 'UTC+8', offset: 480 },
+  { label: 'UTC', offset: 0 },
+]
+
+function toDateTimeLocalValue(source: string, offsetMinutes: number) {
+  if (!source) return ''
+  const trimmed = source.trim()
+  if (!trimmed) return ''
+
+  if (trimmed.includes('T')) {
+    const date = new Date(trimmed)
+    const time = date.getTime()
+    if (!Number.isFinite(time)) return ''
+    const localMs = time + offsetMinutes * 60 * 1000
+    const local = new Date(localMs)
+    const year = local.getUTCFullYear()
+    const month = `${local.getUTCMonth() + 1}`.padStart(2, '0')
+    const day = `${local.getUTCDate()}`.padStart(2, '0')
+    const hours = `${local.getUTCHours()}`.padStart(2, '0')
+    const minutes = `${local.getUTCMinutes()}`.padStart(2, '0')
+    const seconds = `${local.getUTCSeconds()}`.padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+  }
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d+)?$/u.exec(trimmed)
+  if (!match) return ''
+  const year = match[1]
+  const month = match[2]
+  const day = match[3]
+  const hours = match[4]
+  const minutes = match[5]
+  const seconds = match[6]
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+}
+
+function toRfc3339FromLocal(value: string, offsetMinutes: number) {
+  if (!value) return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/u.exec(trimmed)
+  if (!match) return ''
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const hours = Number(match[4])
+  const minutes = Number(match[5])
+  const seconds = Number(match[6] ?? '0')
+  const utcMs =
+    Date.UTC(year, month - 1, day, hours, minutes, seconds) -
+    offsetMinutes * 60 * 1000
+  const date = new Date(utcMs)
+  if (!Number.isFinite(date.getTime())) return ''
+  return date.toISOString()
+}
+
 export default function AdminCompetitionSection() {
   const [competitions, setCompetitions] = useState<CompetitionItem[]>([])
   const [competitionLoading, setCompetitionLoading] = useState(false)
@@ -53,6 +111,26 @@ export default function AdminCompetitionSection() {
   const [competitionBatchDropdownOpen, setCompetitionBatchDropdownOpen] =
     useState(false)
   const competitionHeaderSelectRef = useRef<HTMLInputElement | null>(null)
+  const [activeCompetition, setActiveCompetition] =
+    useState<CompetitionItem | null>(null)
+  const [competitionDetailEditing, setCompetitionDetailEditing] =
+    useState(false)
+  const [competitionDetailNameDraft, setCompetitionDetailNameDraft] =
+    useState('')
+  const [competitionDetailStatusDraft, setCompetitionDetailStatusDraft] =
+    useState<number | null>(null)
+  const [competitionDetailStartTimeDraft, setCompetitionDetailStartTimeDraft] =
+    useState('')
+  const [competitionDetailEndTimeDraft, setCompetitionDetailEndTimeDraft] =
+    useState('')
+  const [
+    competitionDetailStatusDropdownOpen,
+    setCompetitionDetailStatusDropdownOpen,
+  ] = useState(false)
+  const [competitionDetailSubmitting, setCompetitionDetailSubmitting] =
+    useState(false)
+  const [competitionDetailTimezoneOffset, setCompetitionDetailTimezoneOffset] =
+    useState(480)
   const [competitionAlertOpen, setCompetitionAlertOpen] = useState(false)
   const [competitionAlertTitle, setCompetitionAlertTitle] = useState('')
   const [competitionAlertMessage, setCompetitionAlertMessage] = useState('')
@@ -273,7 +351,7 @@ export default function AdminCompetitionSection() {
       const results = await Promise.all(
         selectedCompetitionIds.map((id) =>
           updateCompetition({
-            competition_id: id,
+            id,
             ...patch,
           }),
         ),
@@ -330,6 +408,443 @@ export default function AdminCompetitionSection() {
     } else {
       setSelectedCompetitionIds((prev) => prev.filter((cid) => cid !== id))
     }
+  }
+
+  function openCompetitionDetail(item: CompetitionItem) {
+    setActiveCompetition(item)
+    setCompetitionDetailEditing(false)
+    setCompetitionDetailStatusDropdownOpen(false)
+    setCompetitionDetailNameDraft(item.name)
+    setCompetitionDetailStatusDraft(item.status)
+    setCompetitionDetailTimezoneOffset(480)
+    setCompetitionDetailStartTimeDraft(
+      toDateTimeLocalValue(item.start_time, 480),
+    )
+    setCompetitionDetailEndTimeDraft(toDateTimeLocalValue(item.end_time, 480))
+  }
+
+  function closeCompetitionDetail() {
+    setActiveCompetition(null)
+    setCompetitionDetailEditing(false)
+    setCompetitionDetailStatusDropdownOpen(false)
+    setCompetitionDetailSubmitting(false)
+    void loadCompetitions(
+      competitionPage,
+      competitionPageSize,
+      competitionOrderField,
+      competitionOrderDesc,
+      competitionStatusFilter,
+      competitionPhaseFilter,
+      competitionNameFilter,
+    )
+  }
+
+  const competitionDetailHasChanges =
+    competitionDetailEditing &&
+    activeCompetition !== null &&
+    (competitionDetailNameDraft !== activeCompetition.name ||
+      (competitionDetailStatusDraft !== null &&
+        competitionDetailStatusDraft !== activeCompetition.status) ||
+      toRfc3339FromLocal(
+        competitionDetailStartTimeDraft,
+        competitionDetailTimezoneOffset,
+      ) !== activeCompetition.start_time ||
+      toRfc3339FromLocal(
+        competitionDetailEndTimeDraft,
+        competitionDetailTimezoneOffset,
+      ) !== activeCompetition.end_time)
+
+  async function handleConfirmCompetitionDetailChanges() {
+    if (
+      !activeCompetition ||
+      !competitionDetailEditing ||
+      !competitionDetailHasChanges ||
+      competitionDetailSubmitting
+    ) {
+      return
+    }
+
+    const trimmedName = competitionDetailNameDraft.trim()
+    const trimmedStartTime = competitionDetailStartTimeDraft.trim()
+    const trimmedEndTime = competitionDetailEndTimeDraft.trim()
+
+    const body: {
+      id: number
+      name?: string
+      start_time?: string
+      end_time?: string
+      status?: number
+    } = {
+      id: activeCompetition.id,
+    }
+
+    if (trimmedName !== activeCompetition.name) {
+      body.name = trimmedName
+    }
+    const startIso = toRfc3339FromLocal(
+      trimmedStartTime,
+      competitionDetailTimezoneOffset,
+    )
+    const endIso = toRfc3339FromLocal(
+      trimmedEndTime,
+      competitionDetailTimezoneOffset,
+    )
+
+    if (startIso && startIso !== activeCompetition.start_time) {
+      body.start_time = startIso
+    }
+    if (endIso && endIso !== activeCompetition.end_time) {
+      body.end_time = endIso
+    }
+    if (
+      competitionDetailStatusDraft !== null &&
+      competitionDetailStatusDraft !== activeCompetition.status
+    ) {
+      body.status = competitionDetailStatusDraft
+    }
+
+    if (
+      typeof body.name === 'undefined' &&
+      typeof body.start_time === 'undefined' &&
+      typeof body.end_time === 'undefined' &&
+      typeof body.status === 'undefined'
+    ) {
+      return
+    }
+
+    setCompetitionDetailSubmitting(true)
+    try {
+      const res = await updateCompetition(body)
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        const msg = res.data?.message ?? '更新比赛失败'
+        setCompetitionAlertTitle('操作失败')
+        setCompetitionAlertMessage(msg)
+        setCompetitionAlertOpen(true)
+        return
+      }
+
+      if (!activeCompetition) return
+      const updated: CompetitionItem = {
+        ...activeCompetition,
+        name: body.name ?? activeCompetition.name,
+        start_time: body.start_time ?? activeCompetition.start_time,
+        end_time: body.end_time ?? activeCompetition.end_time,
+        status: body.status ?? activeCompetition.status,
+      }
+
+      setActiveCompetition(updated)
+      setCompetitions((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      )
+      setCompetitionDetailNameDraft(updated.name)
+      setCompetitionDetailStatusDraft(updated.status)
+      setCompetitionDetailStartTimeDraft(
+        toDateTimeLocalValue(
+          updated.start_time,
+          competitionDetailTimezoneOffset,
+        ),
+      )
+      setCompetitionDetailEndTimeDraft(
+        toDateTimeLocalValue(
+          updated.end_time,
+          competitionDetailTimezoneOffset,
+        ),
+      )
+      setCompetitionDetailEditing(false)
+      setCompetitionDetailStatusDropdownOpen(false)
+    } catch {
+      setCompetitionAlertTitle('操作失败')
+      setCompetitionAlertMessage('更新比赛失败，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCompetitionDetailSubmitting(false)
+    }
+  }
+
+  if (activeCompetition) {
+    return (
+      <div className="problem-detail">
+        <div className="problem-detail-header">
+          <button
+            type="button"
+            className="problem-detail-back-btn"
+            onClick={closeCompetitionDetail}
+          >
+            ← 返回比赛列表
+          </button>
+          <div className="problem-detail-header-main">
+            <div className="problem-detail-title">
+              {activeCompetition.name || '比赛详情'}
+            </div>
+            <div className="problem-detail-meta">
+              <span className="problem-detail-meta-item">
+                ID {activeCompetition.id}
+              </span>
+              <span className="problem-detail-dot" />
+              <span className="problem-detail-meta-item">
+                创建用户 {activeCompetition.creator_id} ·{' '}
+                {formatDateTimeText(activeCompetition.created_at)}
+              </span>
+              <span className="problem-detail-dot" />
+              <span className="problem-detail-meta-item">
+                最后更新用户 {activeCompetition.updater_id} ·{' '}
+                {formatDateTimeText(activeCompetition.updated_at)}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="problem-detail-body">
+          <div className="problem-detail-section">
+            <div className="problem-detail-section-title">基本信息</div>
+            <div className="problem-detail-main-row">
+              <div className="problem-detail-grid">
+                <div className="problem-detail-item-label">比赛名称</div>
+                <div className="problem-detail-item-value">
+                  {competitionDetailEditing ? (
+                    <div className="problem-detail-title-input-wrapper">
+                      <input
+                        type="text"
+                        className="problem-detail-input problem-detail-input-title"
+                        maxLength={255}
+                        value={competitionDetailNameDraft}
+                        onChange={(e) =>
+                          setCompetitionDetailNameDraft(e.target.value)
+                        }
+                      />
+                      <span className="problem-detail-title-counter">
+                        {competitionDetailNameDraft.length} / 255
+                      </span>
+                    </div>
+                  ) : (
+                    activeCompetition.name
+                  )}
+                </div>
+                <div className="problem-detail-item-label">发布状态</div>
+                <div className="problem-detail-item-value">
+                  {competitionDetailEditing ? (
+                    <div className="problem-sort-select-wrapper">
+                      <button
+                        type="button"
+                        className={
+                          'problem-sort-select problem-detail-select-trigger' +
+                          (competitionDetailStatusDropdownOpen
+                            ? ' problem-sort-select-open'
+                            : '')
+                        }
+                        onClick={() =>
+                          setCompetitionDetailStatusDropdownOpen((open) => !open)
+                        }
+                      >
+                        {(competitionDetailStatusDraft ??
+                          activeCompetition.status) === 0
+                          ? '未发布'
+                          : (competitionDetailStatusDraft ??
+                            activeCompetition.status) === 1
+                            ? '已发布'
+                            : '已删除'}
+                      </button>
+                      {competitionDetailStatusDropdownOpen && (
+                        <div className="problem-sort-menu problem-detail-select-menu">
+                          <button
+                            type="button"
+                            className="problem-sort-menu-item"
+                            onClick={() => {
+                              setCompetitionDetailStatusDraft(0)
+                              setCompetitionDetailStatusDropdownOpen(false)
+                            }}
+                          >
+                            未发布
+                          </button>
+                          <button
+                            type="button"
+                            className="problem-sort-menu-item"
+                            onClick={() => {
+                              setCompetitionDetailStatusDraft(1)
+                              setCompetitionDetailStatusDropdownOpen(false)
+                            }}
+                          >
+                            已发布
+                          </button>
+                          <button
+                            type="button"
+                            className="problem-sort-menu-item"
+                            onClick={() => {
+                              setCompetitionDetailStatusDraft(2)
+                              setCompetitionDetailStatusDropdownOpen(false)
+                            }}
+                          >
+                            已删除
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    renderStatusPill(activeCompetition.status)
+                  )}
+                </div>
+                <div className="problem-detail-item-label">进行状态</div>
+                <div className="problem-detail-item-value">
+                  {renderRuntimePill(activeCompetition)}
+                </div>
+                <div className="problem-detail-item-label">时区</div>
+                <div className="problem-detail-item-value">
+                  {competitionDetailEditing ? (
+                    <select
+                      className="problem-detail-input problem-detail-input-inline"
+                      value={competitionDetailTimezoneOffset}
+                      onChange={(e) => {
+                        const nextOffset = Number(e.target.value)
+                        if (Number.isNaN(nextOffset)) {
+                          setCompetitionDetailTimezoneOffset(0)
+                          return
+                        }
+                        const prevOffset = competitionDetailTimezoneOffset
+                        const startValue =
+                          competitionDetailStartTimeDraft.trim()
+                        const endValue = competitionDetailEndTimeDraft.trim()
+                        if (startValue) {
+                          const iso = toRfc3339FromLocal(
+                            startValue,
+                            prevOffset,
+                          )
+                          if (iso) {
+                            setCompetitionDetailStartTimeDraft(
+                              toDateTimeLocalValue(iso, nextOffset),
+                            )
+                          }
+                        }
+                        if (endValue) {
+                          const iso = toRfc3339FromLocal(endValue, prevOffset)
+                          if (iso) {
+                            setCompetitionDetailEndTimeDraft(
+                              toDateTimeLocalValue(iso, nextOffset),
+                            )
+                          }
+                        }
+                        setCompetitionDetailTimezoneOffset(nextOffset)
+                      }}
+                    >
+                      {COMPETITION_TIMEZONE_OPTIONS.map((item) => (
+                        <option key={item.offset} value={item.offset}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    (COMPETITION_TIMEZONE_OPTIONS.find(
+                      (item) =>
+                        item.offset === competitionDetailTimezoneOffset,
+                    ) ?? COMPETITION_TIMEZONE_OPTIONS[0]
+                    ).label
+                  )}
+                </div>
+                <div className="problem-detail-item-label">开始时间</div>
+                <div className="problem-detail-item-value">
+                  {competitionDetailEditing ? (
+                    <input
+                      type="datetime-local"
+                      className="problem-detail-input problem-detail-input-inline"
+                      style={{ minWidth: '180px' }}
+                      value={competitionDetailStartTimeDraft}
+                      step={1}
+                      onChange={(e) =>
+                        setCompetitionDetailStartTimeDraft(e.target.value)
+                      }
+                    />
+                  ) : (
+                    formatDateTimeText(activeCompetition.start_time)
+                  )}
+                </div>
+                <div className="problem-detail-item-label">结束时间</div>
+                <div className="problem-detail-item-value">
+                  {competitionDetailEditing ? (
+                    <input
+                      type="datetime-local"
+                      className="problem-detail-input problem-detail-input-inline"
+                      style={{ minWidth: '180px' }}
+                      value={competitionDetailEndTimeDraft}
+                      step={1}
+                      onChange={(e) =>
+                        setCompetitionDetailEndTimeDraft(e.target.value)
+                      }
+                    />
+                  ) : (
+                    formatDateTimeText(activeCompetition.end_time)
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="problem-detail-actions">
+            {!competitionDetailEditing && (
+              <button
+                type="button"
+                className="problem-detail-edit-btn"
+                onClick={() => {
+                  setCompetitionDetailNameDraft(activeCompetition.name)
+                  setCompetitionDetailStatusDraft(activeCompetition.status)
+                  setCompetitionDetailStartTimeDraft(
+                    toDateTimeLocalValue(
+                      activeCompetition.start_time,
+                      competitionDetailTimezoneOffset,
+                    ),
+                  )
+                  setCompetitionDetailEndTimeDraft(
+                    toDateTimeLocalValue(
+                      activeCompetition.end_time,
+                      competitionDetailTimezoneOffset,
+                    ),
+                  )
+                  setCompetitionDetailEditing(true)
+                  setCompetitionDetailStatusDropdownOpen(false)
+                }}
+              >
+                修改
+              </button>
+            )}
+            {competitionDetailEditing && (
+              <>
+                <button
+                  type="button"
+                  className="problem-detail-cancel-btn"
+                  onClick={() => {
+                    if (!activeCompetition) return
+                    setCompetitionDetailNameDraft(activeCompetition.name)
+                    setCompetitionDetailStatusDraft(activeCompetition.status)
+                    setCompetitionDetailStartTimeDraft(
+                      toDateTimeLocalValue(
+                        activeCompetition.start_time,
+                        competitionDetailTimezoneOffset,
+                      ),
+                    )
+                    setCompetitionDetailEndTimeDraft(
+                      toDateTimeLocalValue(
+                        activeCompetition.end_time,
+                        competitionDetailTimezoneOffset,
+                      ),
+                    )
+                    setCompetitionDetailEditing(false)
+                    setCompetitionDetailStatusDropdownOpen(false)
+                  }}
+                >
+                  取消修改
+                </button>
+                <button
+                  type="button"
+                  className="problem-detail-confirm-btn"
+                  disabled={
+                    !competitionDetailHasChanges || competitionDetailSubmitting
+                  }
+                  onClick={handleConfirmCompetitionDetailChanges}
+                >
+                  确认修改
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -721,6 +1236,7 @@ export default function AdminCompetitionSection() {
                   <div
                     key={c.id}
                     className="competition-admin-list-row"
+                    onClick={() => openCompetitionDetail(c)}
                   >
                     <div className="competition-admin-col-select">
                       <input
@@ -760,6 +1276,7 @@ export default function AdminCompetitionSection() {
                         title="查看详情"
                         onClick={(e) => {
                           e.stopPropagation()
+                          openCompetitionDetail(c)
                         }}
                       >
                         👁
