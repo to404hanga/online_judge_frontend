@@ -217,3 +217,21 @@ export async function startCompetition(competitionId: number) {
     },
   )
 }
+
+export type CreateCompetitionRequest = {
+  name: string
+  start_time: string
+  end_time: string
+}
+
+export type CreateCompetitionResponse = {
+  code: number
+  message: string
+}
+
+export async function createCompetition(body: CreateCompetitionRequest) {
+  return postJson<CreateCompetitionResponse>(
+    '/api/online-judge-controller?cmd=CreateCompetition',
+    body,
+  )
+}

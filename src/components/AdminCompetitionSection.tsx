@@ -18,6 +18,7 @@ import {
   disableCompetitionProblems,
   removeCompetitionProblems,
   updateCompetition,
+  createCompetition,
 } from '../api/competition'
 import { fetchProblemList, type ProblemItem } from '../api/problem'
 import { formatDateTimeText } from '../utils/datetime'
@@ -180,6 +181,18 @@ export default function AdminCompetitionSection() {
   const [competitionAlertOpen, setCompetitionAlertOpen] = useState(false)
   const [competitionAlertTitle, setCompetitionAlertTitle] = useState('')
   const [competitionAlertMessage, setCompetitionAlertMessage] = useState('')
+
+  const [createCompetitionModalOpen, setCreateCompetitionModalOpen] =
+    useState(false)
+  const [createCompetitionName, setCreateCompetitionName] = useState('')
+  const [createCompetitionTimezoneOffset, setCreateCompetitionTimezoneOffset] =
+    useState(480)
+  const [createCompetitionStartLocal, setCreateCompetitionStartLocal] =
+    useState('')
+  const [createCompetitionEndLocal, setCreateCompetitionEndLocal] =
+    useState('')
+  const [createCompetitionSubmitting, setCreateCompetitionSubmitting] =
+    useState(false)
 
   const competitionProblemIdSet = new Set(
     competitionProblems.map((item) => item.problem_id),
@@ -899,6 +912,87 @@ export default function AdminCompetitionSection() {
       setCompetitionAlertOpen(true)
     } finally {
       setImportProblemSubmitting(false)
+    }
+  }
+
+  function openCreateCompetitionModal() {
+    if (competitionLoading) return
+    setCreateCompetitionModalOpen(true)
+    setCreateCompetitionName('')
+    setCreateCompetitionTimezoneOffset(480)
+    setCreateCompetitionStartLocal('')
+    setCreateCompetitionEndLocal('')
+    setCreateCompetitionSubmitting(false)
+  }
+
+  function createCompetitionHasChanges() {
+    return (
+      createCompetitionName.trim() !== '' &&
+      createCompetitionStartLocal.trim() !== '' &&
+      createCompetitionEndLocal.trim() !== ''
+    )
+  }
+
+  async function handleSubmitCreateCompetition(e: MouseEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    if (createCompetitionSubmitting) return
+    if (!createCompetitionHasChanges()) return
+
+    const startValue = createCompetitionStartLocal.trim()
+    const endValue = createCompetitionEndLocal.trim()
+    const offset = createCompetitionTimezoneOffset
+    const startIso = toRfc3339FromLocal(startValue, offset)
+    const endIso = toRfc3339FromLocal(endValue, offset)
+    if (!startIso || !endIso) {
+      setCompetitionAlertTitle('创建失败')
+      setCompetitionAlertMessage('开始时间或结束时间格式不正确')
+      setCompetitionAlertOpen(true)
+      return
+    }
+
+    const startMs = Date.parse(startIso)
+    const endMs = Date.parse(endIso)
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+      setCompetitionAlertTitle('创建失败')
+      setCompetitionAlertMessage('开始时间或结束时间解析失败')
+      setCompetitionAlertOpen(true)
+      return
+    }
+    if (startMs >= endMs) {
+      setCompetitionAlertTitle('创建失败')
+      setCompetitionAlertMessage('开始时间必须早于结束时间')
+      setCompetitionAlertOpen(true)
+      return
+    }
+
+    const startWithMs = startIso.replace(/\.\d{3}Z$/u, '.000Z')
+    const endWithMs = endIso.replace(/\.\d{3}Z$/u, '.000Z')
+
+    setCreateCompetitionSubmitting(true)
+    try {
+      const res = await createCompetition({
+        name: createCompetitionName.trim(),
+        start_time: startWithMs,
+        end_time: endWithMs,
+      })
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        setCompetitionAlertTitle('创建失败')
+        setCompetitionAlertMessage(res.data?.message ?? '创建比赛失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+
+      setCreateCompetitionModalOpen(false)
+      setCompetitionAlertTitle('创建成功')
+      setCompetitionAlertMessage('比赛已创建')
+      setCompetitionAlertOpen(true)
+      setCompetitionRefreshToken((token) => token + 1)
+    } catch {
+      setCompetitionAlertTitle('创建失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCreateCompetitionSubmitting(false)
     }
   }
 
@@ -2016,7 +2110,17 @@ export default function AdminCompetitionSection() {
             </div>
             </div>
             <div className="competition-pagination">
-            <div className="problem-page-size-group">
+              <button
+                type="button"
+                className="problem-add-button"
+                title="创建比赛"
+                aria-label="创建比赛"
+                onClick={openCreateCompetitionModal}
+                disabled={competitionLoading}
+              >
+                ＋
+              </button>
+              <div className="problem-page-size-group">
               <span className="problem-page-size-label">每页</span>
               <div className="problem-page-size-select-wrapper">
                 <button
@@ -2069,8 +2173,8 @@ export default function AdminCompetitionSection() {
                 )}
               </div>
               <span className="problem-page-size-label">条</span>
-            </div>
-            <button
+              </div>
+              <button
               type="button"
               onClick={() =>
                 setCompetitionPage((page) => Math.max(1, page - 1))
@@ -2082,7 +2186,7 @@ export default function AdminCompetitionSection() {
             <span className="competition-page-info">
               第 {competitionPage} / {competitionMaxPage} 页
             </span>
-            <button
+              <button
               type="button"
               onClick={() =>
                 setCompetitionPage((page) => page + 1)
@@ -2098,6 +2202,114 @@ export default function AdminCompetitionSection() {
           </>
         )}
       </div>
+      {createCompetitionModalOpen && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal" style={{ width: '480px', maxWidth: 'calc(100% - 40px)' }}>
+            <div className="admin-modal-title">创建比赛</div>
+            <div className="admin-modal-message">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>比赛名称</div>
+                  <input
+                    type="text"
+                    className="problem-detail-input"
+                    value={createCompetitionName}
+                    maxLength={100}
+                    onChange={(e) => setCreateCompetitionName(e.target.value)}
+                    placeholder="请输入比赛名称"
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>时区</div>
+                  <select
+                    className="problem-detail-select problem-detail-input-inline"
+                    value={createCompetitionTimezoneOffset}
+                    onChange={(e) => {
+                      const nextOffset = Number(e.target.value)
+                      if (Number.isNaN(nextOffset)) return
+                      const prevOffset = createCompetitionTimezoneOffset
+                      const startValue = createCompetitionStartLocal.trim()
+                      const endValue = createCompetitionEndLocal.trim()
+                      if (startValue) {
+                        const iso = toRfc3339FromLocal(startValue, prevOffset)
+                        if (iso) {
+                          setCreateCompetitionStartLocal(
+                            toDateTimeLocalValue(iso, nextOffset),
+                          )
+                        }
+                      }
+                      if (endValue) {
+                        const iso = toRfc3339FromLocal(endValue, prevOffset)
+                        if (iso) {
+                          setCreateCompetitionEndLocal(
+                            toDateTimeLocalValue(iso, nextOffset),
+                          )
+                        }
+                      }
+                      setCreateCompetitionTimezoneOffset(nextOffset)
+                    }}
+                  >
+                    {COMPETITION_TIMEZONE_OPTIONS.map((item) => (
+                      <option key={item.offset} value={item.offset}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>开始时间</div>
+                  <input
+                    type="datetime-local"
+                    className="problem-detail-input problem-detail-input-inline"
+                    style={{ minWidth: '220px' }}
+                    value={createCompetitionStartLocal}
+                    step={1}
+                    onChange={(e) =>
+                      setCreateCompetitionStartLocal(e.target.value)
+                    }
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>结束时间</div>
+                  <input
+                    type="datetime-local"
+                    className="problem-detail-input problem-detail-input-inline"
+                    style={{ minWidth: '220px' }}
+                    value={createCompetitionEndLocal}
+                    step={1}
+                    onChange={(e) =>
+                      setCreateCompetitionEndLocal(e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="problem-detail-edit-btn"
+                onClick={() => {
+                  if (createCompetitionSubmitting) return
+                  setCreateCompetitionModalOpen(false)
+                }}
+                disabled={createCompetitionSubmitting}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="problem-detail-confirm-btn"
+                onClick={handleSubmitCreateCompetition}
+                disabled={
+                  createCompetitionSubmitting || !createCompetitionHasChanges()
+                }
+              >
+                {createCompetitionSubmitting ? '创建中…' : '创建'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {competitionAlertOpen && (
         <div className="admin-modal-overlay">
           <div className="admin-modal">
