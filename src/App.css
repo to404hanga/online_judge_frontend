@@ -1187,6 +1187,77 @@ body {
   overflow-y: auto;
 }
 
+.competition-problem-list-table {
+  overflow: hidden;
+}
+
+.competition-problem-list-table .competition-admin-list-body {
+  max-height: calc(8 * 40px);
+}
+
+.competition-problem-list-row {
+  grid-template-columns: 70px minmax(0, 1fr) 80px 140px;
+}
+
+.competition-problem-list-row > .competition-admin-col-name {
+  text-align: center;
+}
+
+.competition-problem-list-row.competition-admin-list-row-header > .competition-admin-col-name {
+  text-align: center;
+}
+
+.competition-problem-list-row:not(.competition-admin-list-row-header):hover {
+  background: #f9fafb;
+  box-shadow: none;
+  transform: none;
+}
+
+.import-problem-table .competition-admin-list-body {
+  max-height: 50vh;
+}
+
+.import-problem-list-row {
+  grid-template-columns: 44px 80px minmax(0, 1fr) 110px 110px;
+}
+
+.import-problem-list-row-disabled {
+  opacity: 0.55;
+}
+
+.competition-problem-action-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  font-size: 12px;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.competition-problem-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.competition-problem-action-btn:hover:not(:disabled) {
+  border-color: #c4d1ff;
+  background-color: #f9fafb;
+}
+
+.competition-problem-action-btn-danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.competition-problem-action-btn-danger:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #ffffff;
+}
+
 .competition-admin-col-id {
   font-variant-numeric: tabular-nums;
   color: #111827;
@@ -1272,6 +1343,7 @@ body {
   font-size: 13px;
   color: #4b5563;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .problem-detail-back-btn:hover {
@@ -1283,6 +1355,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .problem-detail-title {
@@ -1295,15 +1368,56 @@ body {
 
 .problem-detail-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   font-size: 12px;
   color: #6b7280;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .problem-detail-meta-item {
   white-space: nowrap;
+}
+
+.competition-detail-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.competition-detail-title-row > .problem-detail-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competition-detail-title-id {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.competition-detail-meta-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.competition-detail-meta-line {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .problem-detail-dot {
@@ -1331,6 +1445,13 @@ body {
   font-size: 14px;
   font-weight: 600;
   color: #111827;
+}
+
+.problem-detail-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .problem-detail-grid {
@@ -1625,6 +1746,10 @@ body {
   gap: 8px;
 }
 
+.competition-detail-actions-left {
+  justify-content: flex-start;
+}
+
 .problem-detail-edit-btn,
 .problem-detail-cancel-btn,
 .problem-detail-confirm-btn {
@@ -1657,10 +1782,74 @@ body {
   color: #ffffff;
 }
 
+.import-problem-add-btn {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.import-problem-add-btn:hover:not(:disabled) {
+  border-color: #4338ca;
+  background: #4338ca;
+}
+
+.import-problem-add-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .competition-detail-main {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.competition-detail-split {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-height: 0;
+}
+
+.competition-detail-left {
+  flex: 1 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.competition-detail-right {
+  flex: 0 0 500px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.competition-detail-right .problem-detail-section {
+  width: 100%;
+}
+
+.competition-detail-right .competition-admin-list-table,
+.competition-detail-right .competition-empty,
+.competition-detail-right .competition-error {
+  width: 100%;
+}
+
+@media (max-width: 960px) {
+  .competition-detail-split {
+    flex-direction: column;
+  }
+
+  .competition-detail-left {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .competition-detail-right {
+    flex: 1 1 auto;
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 .competition-detail-title {

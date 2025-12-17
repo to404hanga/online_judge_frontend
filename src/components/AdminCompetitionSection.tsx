@@ -7,10 +7,19 @@ import {
 } from 'react'
 import {
   fetchAdminCompetitionList,
+  fetchAdminCompetitionDetail,
+  fetchAdminCompetitionProblemList,
   type CompetitionItem,
+  type CompetitionDetailItem,
   type CompetitionOrderBy,
+  type CompetitionProblemItem,
+  addCompetitionProblems,
+  enableCompetitionProblems,
+  disableCompetitionProblems,
+  removeCompetitionProblems,
   updateCompetition,
 } from '../api/competition'
+import { fetchProblemList, type ProblemItem } from '../api/problem'
 import { formatDateTimeText } from '../utils/datetime'
 
 type CompetitionStatusFilter = 'all' | '0' | '1' | '2'
@@ -76,6 +85,11 @@ function toRfc3339FromLocal(value: string, offsetMinutes: number) {
 }
 
 export default function AdminCompetitionSection() {
+  type ImportProblemItem = Pick<
+    ProblemItem,
+    'id' | 'title' | 'time_limit' | 'memory_limit'
+  >
+
   const [competitions, setCompetitions] = useState<CompetitionItem[]>([])
   const [competitionLoading, setCompetitionLoading] = useState(false)
   const [competitionError, setCompetitionError] = useState('')
@@ -111,8 +125,14 @@ export default function AdminCompetitionSection() {
   const [competitionBatchDropdownOpen, setCompetitionBatchDropdownOpen] =
     useState(false)
   const competitionHeaderSelectRef = useRef<HTMLInputElement | null>(null)
+  const competitionDetailRequestRef = useRef(0)
+  const [activeCompetitionId, setActiveCompetitionId] = useState<number | null>(
+    null,
+  )
   const [activeCompetition, setActiveCompetition] =
-    useState<CompetitionItem | null>(null)
+    useState<CompetitionDetailItem | null>(null)
+  const [competitionDetailLoading, setCompetitionDetailLoading] = useState(false)
+  const [competitionDetailError, setCompetitionDetailError] = useState('')
   const [competitionDetailEditing, setCompetitionDetailEditing] =
     useState(false)
   const [competitionDetailNameDraft, setCompetitionDetailNameDraft] =
@@ -131,9 +151,53 @@ export default function AdminCompetitionSection() {
     useState(false)
   const [competitionDetailTimezoneOffset, setCompetitionDetailTimezoneOffset] =
     useState(480)
+  const [competitionProblems, setCompetitionProblems] = useState<
+    CompetitionProblemItem[]
+  >([])
+  const [competitionProblemsLoading, setCompetitionProblemsLoading] =
+    useState(false)
+  const [competitionProblemsError, setCompetitionProblemsError] = useState('')
+  const [competitionProblemsUpdating, setCompetitionProblemsUpdating] =
+    useState(false)
+  const [competitionProblemsDeleting, setCompetitionProblemsDeleting] =
+    useState(false)
+  const [competitionProblemDeletingId, setCompetitionProblemDeletingId] =
+    useState<number | null>(null)
+  const [competitionProblemDeleteConfirm, setCompetitionProblemDeleteConfirm] =
+    useState<CompetitionProblemItem | null>(null)
+  const [importProblemModalOpen, setImportProblemModalOpen] = useState(false)
+  const [importProblemList, setImportProblemList] = useState<ImportProblemItem[]>(
+    [],
+  )
+  const [selectedImportProblemIds, setSelectedImportProblemIds] = useState<
+    number[]
+  >([])
+  const [importProblemPage, setImportProblemPage] = useState(1)
+  const [importProblemTotal, setImportProblemTotal] = useState(0)
+  const [importProblemLoading, setImportProblemLoading] = useState(false)
+  const [importProblemSubmitting, setImportProblemSubmitting] = useState(false)
+  const [importProblemError, setImportProblemError] = useState('')
   const [competitionAlertOpen, setCompetitionAlertOpen] = useState(false)
   const [competitionAlertTitle, setCompetitionAlertTitle] = useState('')
   const [competitionAlertMessage, setCompetitionAlertMessage] = useState('')
+
+  const competitionProblemIdSet = new Set(
+    competitionProblems.map((item) => item.problem_id),
+  )
+
+  useEffect(() => {
+    const problemIdSet = new Set(
+      competitionProblems.map((item) => item.problem_id),
+    )
+    setSelectedImportProblemIds((prev) =>
+      prev.filter((id) => !problemIdSet.has(id)),
+    )
+  }, [competitionProblems])
+
+  useEffect(() => {
+    if (!importProblemModalOpen) return
+    void loadImportProblemList(importProblemPage)
+  }, [importProblemModalOpen, importProblemPage])
 
   useEffect(() => {
     void loadCompetitions(
@@ -155,6 +219,82 @@ export default function AdminCompetitionSection() {
     competitionNameFilter,
     competitionRefreshToken,
   ])
+
+  async function loadCompetitionProblems(competitionId: number) {
+    setCompetitionProblemsLoading(true)
+    setCompetitionProblemsError('')
+    try {
+      const res = await fetchAdminCompetitionProblemList(competitionId)
+      if (!res.ok || !res.data || !res.data.data) {
+        setCompetitionProblems([])
+        setCompetitionProblemsError(res.data?.message ?? '获取比赛题目列表失败')
+        return
+      }
+      setCompetitionProblems(res.data.data)
+    } catch {
+      setCompetitionProblems([])
+      setCompetitionProblemsError('网络错误，请稍后重试')
+    } finally {
+      setCompetitionProblemsLoading(false)
+    }
+  }
+
+  async function loadCompetitionDetail(competitionId: number, offsetMinutes: number) {
+    const requestId = competitionDetailRequestRef.current + 1
+    competitionDetailRequestRef.current = requestId
+
+    setCompetitionDetailLoading(true)
+    setCompetitionDetailError('')
+    try {
+      const res = await fetchAdminCompetitionDetail(competitionId)
+      if (competitionDetailRequestRef.current !== requestId) return
+
+      if (!res.ok || !res.data || !res.data.data) {
+        setActiveCompetition(null)
+        setCompetitionDetailError(res.data?.message ?? '获取比赛详情失败')
+        return
+      }
+
+      const detail = res.data.data
+      setActiveCompetition(detail)
+      setCompetitions((prev) =>
+        prev.map((item) =>
+          item.id === detail.id
+            ? {
+                id: detail.id,
+                name: detail.name,
+                status: detail.status,
+                start_time: detail.start_time,
+                end_time: detail.end_time,
+                creator_id: detail.creator_id,
+                updater_id: detail.updater_id,
+                created_at: detail.created_at,
+                updated_at: detail.updated_at,
+              }
+            : item,
+        ),
+      )
+
+      if (!competitionDetailEditing) {
+        setCompetitionDetailNameDraft(detail.name)
+        setCompetitionDetailStatusDraft(detail.status)
+        setCompetitionDetailStartTimeDraft(
+          toDateTimeLocalValue(detail.start_time, offsetMinutes),
+        )
+        setCompetitionDetailEndTimeDraft(
+          toDateTimeLocalValue(detail.end_time, offsetMinutes),
+        )
+      }
+    } catch {
+      if (competitionDetailRequestRef.current !== requestId) return
+      setActiveCompetition(null)
+      setCompetitionDetailError('网络错误，请稍后重试')
+    } finally {
+      if (competitionDetailRequestRef.current === requestId) {
+        setCompetitionDetailLoading(false)
+      }
+    }
+  }
 
   async function loadCompetitions(
     targetPage: number,
@@ -344,6 +484,19 @@ export default function AdminCompetitionSection() {
     )
   }
 
+  function renderCompetitionProblemStatusPill(status: number) {
+    const effective = status === 1
+    const text = effective ? '启用' : '禁用'
+    const toneClass = effective
+      ? 'problem-status-pill-active'
+      : 'problem-status-pill-deleted'
+    return (
+      <span className={`problem-status-pill ${toneClass}`}>
+        {text}
+      </span>
+    )
+  }
+
   async function batchUpdateSelectedCompetitions(patch: { status?: number }) {
     if (!hasSelectedCompetitions) return
     setCompetitionBatchSubmitting(true)
@@ -411,23 +564,50 @@ export default function AdminCompetitionSection() {
   }
 
   function openCompetitionDetail(item: CompetitionItem) {
-    setActiveCompetition(item)
+    setActiveCompetitionId(item.id)
+    setActiveCompetition(null)
+    setCompetitionDetailError('')
     setCompetitionDetailEditing(false)
     setCompetitionDetailStatusDropdownOpen(false)
-    setCompetitionDetailNameDraft(item.name)
-    setCompetitionDetailStatusDraft(item.status)
     setCompetitionDetailTimezoneOffset(480)
-    setCompetitionDetailStartTimeDraft(
-      toDateTimeLocalValue(item.start_time, 480),
-    )
-    setCompetitionDetailEndTimeDraft(toDateTimeLocalValue(item.end_time, 480))
+    setCompetitionDetailNameDraft('')
+    setCompetitionDetailStatusDraft(null)
+    setCompetitionDetailStartTimeDraft('')
+    setCompetitionDetailEndTimeDraft('')
+    setCompetitionDetailSubmitting(false)
+    setCompetitionProblemsDeleting(false)
+    setCompetitionProblemDeletingId(null)
+    setCompetitionProblemDeleteConfirm(null)
+    setImportProblemModalOpen(false)
+    setImportProblemList([])
+    setImportProblemPage(1)
+    setImportProblemTotal(0)
+    setImportProblemLoading(false)
+    setImportProblemError('')
+    void loadCompetitionDetail(item.id, 480)
+    void loadCompetitionProblems(item.id)
   }
 
   function closeCompetitionDetail() {
+    competitionDetailRequestRef.current += 1
+    setActiveCompetitionId(null)
     setActiveCompetition(null)
     setCompetitionDetailEditing(false)
     setCompetitionDetailStatusDropdownOpen(false)
     setCompetitionDetailSubmitting(false)
+    setCompetitionDetailLoading(false)
+    setCompetitionDetailError('')
+    setCompetitionProblems([])
+    setCompetitionProblemsError('')
+    setCompetitionProblemsDeleting(false)
+    setCompetitionProblemDeletingId(null)
+    setCompetitionProblemDeleteConfirm(null)
+    setImportProblemModalOpen(false)
+    setImportProblemList([])
+    setImportProblemPage(1)
+    setImportProblemTotal(0)
+    setImportProblemLoading(false)
+    setImportProblemError('')
     void loadCompetitions(
       competitionPage,
       competitionPageSize,
@@ -524,7 +704,7 @@ export default function AdminCompetitionSection() {
       }
 
       if (!activeCompetition) return
-      const updated: CompetitionItem = {
+      const updated: CompetitionDetailItem = {
         ...activeCompetition,
         name: body.name ?? activeCompetition.name,
         start_time: body.start_time ?? activeCompetition.start_time,
@@ -532,9 +712,21 @@ export default function AdminCompetitionSection() {
         status: body.status ?? activeCompetition.status,
       }
 
+      const listItem: CompetitionItem = {
+        id: updated.id,
+        name: updated.name,
+        status: updated.status,
+        start_time: updated.start_time,
+        end_time: updated.end_time,
+        creator_id: updated.creator_id,
+        updater_id: updated.updater_id,
+        created_at: updated.created_at,
+        updated_at: updated.updated_at,
+      }
+
       setActiveCompetition(updated)
       setCompetitions((prev) =>
-        prev.map((item) => (item.id === updated.id ? updated : item)),
+        prev.map((item) => (item.id === updated.id ? listItem : item)),
       )
       setCompetitionDetailNameDraft(updated.name)
       setCompetitionDetailStatusDraft(updated.status)
@@ -561,289 +753,814 @@ export default function AdminCompetitionSection() {
     }
   }
 
-  if (activeCompetition) {
+  async function handleUpdateCompetitionProblemStatus(
+    competitionId: number,
+    problemId: number,
+    targetStatus: number,
+  ) {
+    if (competitionProblemsUpdating) return
+    setCompetitionProblemsUpdating(true)
+    try {
+      const api =
+        targetStatus === 1 ? enableCompetitionProblems : disableCompetitionProblems
+      const res = await api(competitionId, [problemId])
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        const msg = res.data?.message ?? '更新比赛题目状态失败'
+        setCompetitionAlertTitle('操作失败')
+        setCompetitionAlertMessage(msg)
+        setCompetitionAlertOpen(true)
+        return
+      }
+      await loadCompetitionProblems(competitionId)
+    } catch {
+      setCompetitionAlertTitle('操作失败')
+      setCompetitionAlertMessage('更新比赛题目状态失败，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCompetitionProblemsUpdating(false)
+    }
+  }
+
+  function handleDeleteCompetitionProblem(problem: CompetitionProblemItem) {
+    setCompetitionProblemDeleteConfirm(problem)
+  }
+
+  async function handleConfirmDeleteCompetitionProblem() {
+    if (!competitionProblemDeleteConfirm) return
+    if (activeCompetitionId === null) return
+    if (competitionProblemsUpdating || competitionProblemsDeleting) return
+
+    const target = competitionProblemDeleteConfirm
+    setCompetitionProblemsDeleting(true)
+    setCompetitionProblemDeletingId(target.problem_id)
+    try {
+      const res = await removeCompetitionProblems(activeCompetitionId, [
+        target.problem_id,
+      ])
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        const msg = res.data?.message ?? '删除比赛题目失败'
+        setCompetitionAlertTitle('操作失败')
+        setCompetitionAlertMessage(msg)
+        setCompetitionAlertOpen(true)
+        return
+      }
+      setCompetitionProblems((prev) =>
+        prev.filter((item) => item.problem_id !== target.problem_id),
+      )
+    } catch {
+      setCompetitionAlertTitle('操作失败')
+      setCompetitionAlertMessage('删除比赛题目失败，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCompetitionProblemsDeleting(false)
+      setCompetitionProblemDeletingId(null)
+      setCompetitionProblemDeleteConfirm(null)
+    }
+  }
+
+  async function loadImportProblemList(page: number) {
+    setImportProblemLoading(true)
+    setImportProblemError('')
+    try {
+      const res = await fetchProblemList(page, 10, 'id', true, 1)
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        setImportProblemList([])
+        setImportProblemTotal(0)
+        setImportProblemError(res.data?.message ?? '获取题目列表失败')
+        return
+      }
+
+      const data = res.data.data
+      if (!data || !Array.isArray(data.list)) {
+        setImportProblemList([])
+        setImportProblemTotal(0)
+        setImportProblemError('获取题目列表失败')
+        return
+      }
+
+      setImportProblemTotal(typeof data.total === 'number' ? data.total : 0)
+      setImportProblemList(
+        data.list.map((item) => ({
+          id: item.id,
+          title: item.title,
+          time_limit: item.time_limit,
+          memory_limit: item.memory_limit,
+        })),
+      )
+    } catch {
+      setImportProblemList([])
+      setImportProblemTotal(0)
+      setImportProblemError('网络错误，请稍后重试')
+    } finally {
+      setImportProblemLoading(false)
+    }
+  }
+
+  function openImportProblemModal() {
+    setImportProblemModalOpen(true)
+    setImportProblemList([])
+    setSelectedImportProblemIds([])
+    setImportProblemPage(1)
+    setImportProblemTotal(0)
+    setImportProblemSubmitting(false)
+    setImportProblemError('')
+  }
+
+  async function handleAddSelectedImportProblems() {
+    if (activeCompetitionId === null) return
+    if (importProblemSubmitting) return
+
+    const problemIdSet = new Set(
+      competitionProblems.map((item) => item.problem_id),
+    )
+    const selectedIds = selectedImportProblemIds.filter(
+      (id) => !problemIdSet.has(id),
+    )
+    if (selectedIds.length === 0) return
+
+    setImportProblemSubmitting(true)
+    try {
+      const res = await addCompetitionProblems(activeCompetitionId, selectedIds)
+      if (!res.ok || !res.data || res.data.code !== 200) {
+        setCompetitionAlertTitle('添加失败')
+        setCompetitionAlertMessage(res.data?.message ?? '添加比赛题目失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+
+      setSelectedImportProblemIds([])
+      await loadCompetitionProblems(activeCompetitionId)
+      setCompetitionAlertTitle('添加成功')
+      setCompetitionAlertMessage('已添加到比赛题目列表')
+      setCompetitionAlertOpen(true)
+    } catch {
+      setCompetitionAlertTitle('添加失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setImportProblemSubmitting(false)
+    }
+  }
+
+  if (activeCompetitionId !== null) {
     return (
-      <div className="problem-detail">
-        <div className="problem-detail-header">
-          <button
-            type="button"
-            className="problem-detail-back-btn"
-            onClick={closeCompetitionDetail}
-          >
-            ← 返回比赛列表
-          </button>
-          <div className="problem-detail-header-main">
-            <div className="problem-detail-title">
-              {activeCompetition.name || '比赛详情'}
-            </div>
-            <div className="problem-detail-meta">
-              <span className="problem-detail-meta-item">
-                ID {activeCompetition.id}
-              </span>
-              <span className="problem-detail-dot" />
-              <span className="problem-detail-meta-item">
-                创建用户 {activeCompetition.creator_id} ·{' '}
-                {formatDateTimeText(activeCompetition.created_at)}
-              </span>
-              <span className="problem-detail-dot" />
-              <span className="problem-detail-meta-item">
-                最后更新用户 {activeCompetition.updater_id} ·{' '}
-                {formatDateTimeText(activeCompetition.updated_at)}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="problem-detail-body">
-          <div className="problem-detail-section">
-            <div className="problem-detail-section-title">基本信息</div>
-            <div className="problem-detail-main-row">
-              <div className="problem-detail-grid">
-                <div className="problem-detail-item-label">比赛名称</div>
-                <div className="problem-detail-item-value">
-                  {competitionDetailEditing ? (
-                    <div className="problem-detail-title-input-wrapper">
-                      <input
-                        type="text"
-                        className="problem-detail-input problem-detail-input-title"
-                        maxLength={255}
-                        value={competitionDetailNameDraft}
-                        onChange={(e) =>
-                          setCompetitionDetailNameDraft(e.target.value)
-                        }
-                      />
-                      <span className="problem-detail-title-counter">
-                        {competitionDetailNameDraft.length} / 255
-                      </span>
-                    </div>
-                  ) : (
-                    activeCompetition.name
-                  )}
+      <>
+        <div className="problem-detail">
+          <div className="competition-detail-split">
+          <div className="competition-detail-left">
+            <div className="problem-detail-header">
+              <button
+                type="button"
+                className="problem-detail-back-btn"
+                onClick={closeCompetitionDetail}
+              >
+                ← 返回比赛列表
+              </button>
+              <div className="problem-detail-header-main">
+                <div className="competition-detail-title-row">
+                  <div className="problem-detail-title">
+                    {activeCompetition?.name || '比赛详情'}
+                  </div>
+                  <div className="competition-detail-title-id">
+                    ID {activeCompetitionId}
+                  </div>
                 </div>
-                <div className="problem-detail-item-label">发布状态</div>
-                <div className="problem-detail-item-value">
-                  {competitionDetailEditing ? (
-                    <div className="problem-sort-select-wrapper">
-                      <button
-                        type="button"
-                        className={
-                          'problem-sort-select problem-detail-select-trigger' +
-                          (competitionDetailStatusDropdownOpen
-                            ? ' problem-sort-select-open'
-                            : '')
-                        }
-                        onClick={() =>
-                          setCompetitionDetailStatusDropdownOpen((open) => !open)
-                        }
-                      >
-                        {(competitionDetailStatusDraft ??
-                          activeCompetition.status) === 0
-                          ? '未发布'
-                          : (competitionDetailStatusDraft ??
-                            activeCompetition.status) === 1
-                            ? '已发布'
-                            : '已删除'}
-                      </button>
-                      {competitionDetailStatusDropdownOpen && (
-                        <div className="problem-sort-menu problem-detail-select-menu">
-                          <button
-                            type="button"
-                            className="problem-sort-menu-item"
-                            onClick={() => {
-                              setCompetitionDetailStatusDraft(0)
-                              setCompetitionDetailStatusDropdownOpen(false)
-                            }}
-                          >
-                            未发布
-                          </button>
-                          <button
-                            type="button"
-                            className="problem-sort-menu-item"
-                            onClick={() => {
-                              setCompetitionDetailStatusDraft(1)
-                              setCompetitionDetailStatusDropdownOpen(false)
-                            }}
-                          >
-                            已发布
-                          </button>
-                          <button
-                            type="button"
-                            className="problem-sort-menu-item"
-                            onClick={() => {
-                              setCompetitionDetailStatusDraft(2)
-                              setCompetitionDetailStatusDropdownOpen(false)
-                            }}
-                          >
-                            已删除
-                          </button>
+                <div className="competition-detail-meta-lines">
+                  {competitionDetailLoading && (
+                    <div className="competition-detail-meta-line">
+                      正在加载比赛详情…
+                    </div>
+                  )}
+                  {!competitionDetailLoading && competitionDetailError && (
+                    <div className="competition-detail-meta-line">
+                      {competitionDetailError}
+                    </div>
+                  )}
+                  {!competitionDetailLoading &&
+                    !competitionDetailError &&
+                    activeCompetition && (
+                      <>
+                        <div className="competition-detail-meta-line">
+                          最后更新用户{' '}
+                          {activeCompetition.updater_realname?.trim()
+                            ? activeCompetition.updater_realname
+                            : activeCompetition.updater_id}{' '}
+                          · {formatDateTimeText(activeCompetition.updated_at)}
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    renderStatusPill(activeCompetition.status)
-                  )}
-                </div>
-                <div className="problem-detail-item-label">进行状态</div>
-                <div className="problem-detail-item-value">
-                  {renderRuntimePill(activeCompetition)}
-                </div>
-                <div className="problem-detail-item-label">时区</div>
-                <div className="problem-detail-item-value">
-                  {competitionDetailEditing ? (
-                    <select
-                      className="problem-detail-input problem-detail-input-inline"
-                      value={competitionDetailTimezoneOffset}
-                      onChange={(e) => {
-                        const nextOffset = Number(e.target.value)
-                        if (Number.isNaN(nextOffset)) {
-                          setCompetitionDetailTimezoneOffset(0)
-                          return
-                        }
-                        const prevOffset = competitionDetailTimezoneOffset
-                        const startValue =
-                          competitionDetailStartTimeDraft.trim()
-                        const endValue = competitionDetailEndTimeDraft.trim()
-                        if (startValue) {
-                          const iso = toRfc3339FromLocal(
-                            startValue,
-                            prevOffset,
-                          )
-                          if (iso) {
-                            setCompetitionDetailStartTimeDraft(
-                              toDateTimeLocalValue(iso, nextOffset),
-                            )
-                          }
-                        }
-                        if (endValue) {
-                          const iso = toRfc3339FromLocal(endValue, prevOffset)
-                          if (iso) {
-                            setCompetitionDetailEndTimeDraft(
-                              toDateTimeLocalValue(iso, nextOffset),
-                            )
-                          }
-                        }
-                        setCompetitionDetailTimezoneOffset(nextOffset)
-                      }}
-                    >
-                      {COMPETITION_TIMEZONE_OPTIONS.map((item) => (
-                        <option key={item.offset} value={item.offset}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    (COMPETITION_TIMEZONE_OPTIONS.find(
-                      (item) =>
-                        item.offset === competitionDetailTimezoneOffset,
-                    ) ?? COMPETITION_TIMEZONE_OPTIONS[0]
-                    ).label
-                  )}
-                </div>
-                <div className="problem-detail-item-label">开始时间</div>
-                <div className="problem-detail-item-value">
-                  {competitionDetailEditing ? (
-                    <input
-                      type="datetime-local"
-                      className="problem-detail-input problem-detail-input-inline"
-                      style={{ minWidth: '180px' }}
-                      value={competitionDetailStartTimeDraft}
-                      step={1}
-                      onChange={(e) =>
-                        setCompetitionDetailStartTimeDraft(e.target.value)
-                      }
-                    />
-                  ) : (
-                    formatDateTimeText(activeCompetition.start_time)
-                  )}
-                </div>
-                <div className="problem-detail-item-label">结束时间</div>
-                <div className="problem-detail-item-value">
-                  {competitionDetailEditing ? (
-                    <input
-                      type="datetime-local"
-                      className="problem-detail-input problem-detail-input-inline"
-                      style={{ minWidth: '180px' }}
-                      value={competitionDetailEndTimeDraft}
-                      step={1}
-                      onChange={(e) =>
-                        setCompetitionDetailEndTimeDraft(e.target.value)
-                      }
-                    />
-                  ) : (
-                    formatDateTimeText(activeCompetition.end_time)
-                  )}
+                        <div className="competition-detail-meta-line">
+                          创建用户{' '}
+                          {activeCompetition.creator_realname?.trim()
+                            ? activeCompetition.creator_realname
+                            : activeCompetition.creator_id}{' '}
+                          · {formatDateTimeText(activeCompetition.created_at)}
+                        </div>
+                      </>
+                    )}
                 </div>
               </div>
             </div>
-          </div>
-          <div className="problem-detail-actions">
-            {!competitionDetailEditing && (
-              <button
-                type="button"
-                className="problem-detail-edit-btn"
-                onClick={() => {
-                  setCompetitionDetailNameDraft(activeCompetition.name)
-                  setCompetitionDetailStatusDraft(activeCompetition.status)
-                  setCompetitionDetailStartTimeDraft(
-                    toDateTimeLocalValue(
-                      activeCompetition.start_time,
-                      competitionDetailTimezoneOffset,
-                    ),
-                  )
-                  setCompetitionDetailEndTimeDraft(
-                    toDateTimeLocalValue(
-                      activeCompetition.end_time,
-                      competitionDetailTimezoneOffset,
-                    ),
-                  )
-                  setCompetitionDetailEditing(true)
-                  setCompetitionDetailStatusDropdownOpen(false)
-                }}
+            <div className="problem-detail-body">
+              <div className="problem-detail-section">
+                <div className="problem-detail-section-title">基本信息</div>
+                <div className="problem-detail-main-row">
+                  <div className="problem-detail-grid">
+                    <div className="problem-detail-item-label">比赛名称</div>
+                    <div className="problem-detail-item-value">
+                      {competitionDetailEditing ? (
+                        <div className="problem-detail-title-input-wrapper">
+                          <input
+                            type="text"
+                            className="problem-detail-input problem-detail-input-title"
+                            maxLength={255}
+                            value={competitionDetailNameDraft}
+                            onChange={(e) =>
+                              setCompetitionDetailNameDraft(e.target.value)
+                            }
+                          />
+                          <span className="problem-detail-title-counter">
+                            {competitionDetailNameDraft.length} / 255
+                          </span>
+                        </div>
+                      ) : (
+                        activeCompetition?.name ?? '-'
+                      )}
+                    </div>
+                    <div className="problem-detail-item-label">发布状态</div>
+                    <div className="problem-detail-item-value">
+                      {competitionDetailEditing ? (
+                        <div className="problem-sort-select-wrapper">
+                          <button
+                            type="button"
+                            className={
+                              'problem-sort-select problem-detail-select-trigger' +
+                              (competitionDetailStatusDropdownOpen
+                                ? ' problem-sort-select-open'
+                                : '')
+                            }
+                            onClick={() =>
+                              setCompetitionDetailStatusDropdownOpen(
+                                (open) => !open,
+                              )
+                            }
+                          >
+                            {(competitionDetailStatusDraft ??
+                              (activeCompetition?.status ?? 0)) === 0
+                              ? '未发布'
+                            : (competitionDetailStatusDraft ??
+                                (activeCompetition?.status ?? 0)) === 1
+                                ? '已发布'
+                                : '已删除'}
+                          </button>
+                          {competitionDetailStatusDropdownOpen && (
+                            <div className="problem-sort-menu problem-detail-select-menu">
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setCompetitionDetailStatusDraft(0)
+                                  setCompetitionDetailStatusDropdownOpen(false)
+                                }}
+                              >
+                                未发布
+                              </button>
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setCompetitionDetailStatusDraft(1)
+                                  setCompetitionDetailStatusDropdownOpen(false)
+                                }}
+                              >
+                                已发布
+                              </button>
+                              <button
+                                type="button"
+                                className="problem-sort-menu-item"
+                                onClick={() => {
+                                  setCompetitionDetailStatusDraft(2)
+                                  setCompetitionDetailStatusDropdownOpen(false)
+                                }}
+                              >
+                                已删除
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        (activeCompetition
+                          ? renderStatusPill(activeCompetition.status)
+                          : '-')
+                      )}
+                    </div>
+                    <div className="problem-detail-item-label">进行状态</div>
+                    <div className="problem-detail-item-value">
+                      {activeCompetition ? renderRuntimePill(activeCompetition) : '-'}
+                    </div>
+                    <div className="problem-detail-item-label">时区</div>
+                    <div className="problem-detail-item-value">
+                      {competitionDetailEditing ? (
+                        <select
+                          className="problem-detail-input problem-detail-input-inline"
+                          value={competitionDetailTimezoneOffset}
+                          onChange={(e) => {
+                            const nextOffset = Number(e.target.value)
+                            if (Number.isNaN(nextOffset)) {
+                              setCompetitionDetailTimezoneOffset(0)
+                              return
+                            }
+                            const prevOffset = competitionDetailTimezoneOffset
+                            const startValue =
+                              competitionDetailStartTimeDraft.trim()
+                            const endValue = competitionDetailEndTimeDraft.trim()
+                            if (startValue) {
+                              const iso = toRfc3339FromLocal(
+                                startValue,
+                                prevOffset,
+                              )
+                              if (iso) {
+                                setCompetitionDetailStartTimeDraft(
+                                  toDateTimeLocalValue(iso, nextOffset),
+                                )
+                              }
+                            }
+                            if (endValue) {
+                              const iso = toRfc3339FromLocal(endValue, prevOffset)
+                              if (iso) {
+                                setCompetitionDetailEndTimeDraft(
+                                  toDateTimeLocalValue(iso, nextOffset),
+                                )
+                              }
+                            }
+                            setCompetitionDetailTimezoneOffset(nextOffset)
+                          }}
+                        >
+                          {COMPETITION_TIMEZONE_OPTIONS.map((item) => (
+                            <option key={item.offset} value={item.offset}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        (COMPETITION_TIMEZONE_OPTIONS.find(
+                          (item) =>
+                            item.offset === competitionDetailTimezoneOffset,
+                        ) ?? COMPETITION_TIMEZONE_OPTIONS[0]
+                        ).label
+                      )}
+                    </div>
+                    <div className="problem-detail-item-label">开始时间</div>
+                    <div className="problem-detail-item-value">
+                      {competitionDetailEditing ? (
+                        <input
+                          type="datetime-local"
+                          className="problem-detail-input problem-detail-input-inline"
+                          style={{ minWidth: '180px' }}
+                          value={competitionDetailStartTimeDraft}
+                          step={1}
+                          onChange={(e) =>
+                            setCompetitionDetailStartTimeDraft(e.target.value)
+                          }
+                        />
+                      ) : (
+                        (activeCompetition
+                          ? formatDateTimeText(activeCompetition.start_time)
+                          : '-')
+                      )}
+                    </div>
+                    <div className="problem-detail-item-label">结束时间</div>
+                    <div className="problem-detail-item-value">
+                      {competitionDetailEditing ? (
+                        <input
+                          type="datetime-local"
+                          className="problem-detail-input problem-detail-input-inline"
+                          style={{ minWidth: '180px' }}
+                          value={competitionDetailEndTimeDraft}
+                          step={1}
+                          onChange={(e) =>
+                            setCompetitionDetailEndTimeDraft(e.target.value)
+                          }
+                        />
+                      ) : (
+                        (activeCompetition
+                          ? formatDateTimeText(activeCompetition.end_time)
+                          : '-')
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div
+                className={
+                  'problem-detail-actions' +
+                  (!competitionDetailEditing ? ' competition-detail-actions-left' : '')
+                }
               >
-                修改
-              </button>
-            )}
-            {competitionDetailEditing && (
-              <>
+                {!competitionDetailEditing && (
+                  <button
+                    type="button"
+                    className="problem-detail-edit-btn"
+                    disabled={
+                      !activeCompetition ||
+                      competitionDetailLoading ||
+                      !!competitionDetailError
+                    }
+                    onClick={() => {
+                      if (!activeCompetition) return
+                      setCompetitionDetailNameDraft(activeCompetition.name)
+                      setCompetitionDetailStatusDraft(activeCompetition.status)
+                      setCompetitionDetailStartTimeDraft(
+                        toDateTimeLocalValue(
+                          activeCompetition.start_time,
+                          competitionDetailTimezoneOffset,
+                        ),
+                      )
+                      setCompetitionDetailEndTimeDraft(
+                        toDateTimeLocalValue(
+                          activeCompetition.end_time,
+                          competitionDetailTimezoneOffset,
+                        ),
+                      )
+                      setCompetitionDetailEditing(true)
+                      setCompetitionDetailStatusDropdownOpen(false)
+                    }}
+                  >
+                    修改
+                  </button>
+                )}
+                {competitionDetailEditing && (
+                  <>
+                    <button
+                      type="button"
+                      className="problem-detail-cancel-btn"
+                      onClick={() => {
+                        if (!activeCompetition) return
+                        setCompetitionDetailNameDraft(activeCompetition.name)
+                        setCompetitionDetailStatusDraft(activeCompetition.status)
+                        setCompetitionDetailStartTimeDraft(
+                          toDateTimeLocalValue(
+                            activeCompetition.start_time,
+                            competitionDetailTimezoneOffset,
+                          ),
+                        )
+                        setCompetitionDetailEndTimeDraft(
+                          toDateTimeLocalValue(
+                            activeCompetition.end_time,
+                            competitionDetailTimezoneOffset,
+                          ),
+                        )
+                        setCompetitionDetailEditing(false)
+                        setCompetitionDetailStatusDropdownOpen(false)
+                      }}
+                    >
+                      取消修改
+                    </button>
+                    <button
+                      type="button"
+                      className="problem-detail-confirm-btn"
+                      disabled={
+                        !competitionDetailHasChanges || competitionDetailSubmitting
+                      }
+                      onClick={handleConfirmCompetitionDetailChanges}
+                    >
+                      确认修改
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="competition-detail-right">
+            <div className="problem-detail-section">
+              <div className="problem-detail-section-title-row">
+                <div className="problem-detail-section-title">比赛题目</div>
                 <button
                   type="button"
-                  className="problem-detail-cancel-btn"
-                  onClick={() => {
-                    if (!activeCompetition) return
-                    setCompetitionDetailNameDraft(activeCompetition.name)
-                    setCompetitionDetailStatusDraft(activeCompetition.status)
-                    setCompetitionDetailStartTimeDraft(
-                      toDateTimeLocalValue(
-                        activeCompetition.start_time,
-                        competitionDetailTimezoneOffset,
-                      ),
-                    )
-                    setCompetitionDetailEndTimeDraft(
-                      toDateTimeLocalValue(
-                        activeCompetition.end_time,
-                        competitionDetailTimezoneOffset,
-                      ),
-                    )
-                    setCompetitionDetailEditing(false)
-                    setCompetitionDetailStatusDropdownOpen(false)
-                  }}
+                  className="problem-add-button"
+                  aria-label="导入题目"
+                  title="导入题目"
+                  onClick={openImportProblemModal}
                 >
-                  取消修改
+                  ＋
                 </button>
-                <button
-                  type="button"
-                  className="problem-detail-confirm-btn"
-                  disabled={
-                    !competitionDetailHasChanges || competitionDetailSubmitting
-                  }
-                  onClick={handleConfirmCompetitionDetailChanges}
-                >
-                  确认修改
-                </button>
-              </>
-            )}
+              </div>
+              <div className="problem-detail-main-row">
+                {competitionProblemsLoading && (
+                  <div className="competition-empty">正在加载比赛题目…</div>
+                )}
+                {!competitionProblemsLoading && competitionProblemsError && (
+                  <div className="competition-error">{competitionProblemsError}</div>
+                )}
+                {!competitionProblemsLoading &&
+                  !competitionProblemsError &&
+                  competitionProblems.length === 0 && (
+                    <div className="competition-empty">当前比赛暂无题目</div>
+                  )}
+                {!competitionProblemsLoading &&
+                  !competitionProblemsError &&
+                  competitionProblems.length > 0 && (
+                    <div className="competition-admin-list-table competition-problem-list-table">
+                      <div className="competition-admin-list-row competition-admin-list-row-header competition-problem-list-row">
+                        <div className="competition-admin-col-id">题目ID</div>
+                        <div className="competition-admin-col-name">题目标题</div>
+                        <div className="competition-admin-col-status">状态</div>
+                        <div className="competition-admin-col-actions">操作</div>
+                      </div>
+                      <div className="competition-admin-list-body">
+                        {competitionProblems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="competition-admin-list-row competition-problem-list-row"
+                          >
+                            <div className="competition-admin-col-id">
+                              {item.problem_id}
+                            </div>
+                            <div className="competition-admin-col-name">
+                              {item.problem_title}
+                            </div>
+                            <div className="competition-admin-col-status">
+                              {renderCompetitionProblemStatusPill(item.status)}
+                            </div>
+                            <div className="competition-admin-col-actions problem-col-actions">
+                                {item.status === 1 ? (
+                                  <button
+                                    type="button"
+                                    className="competition-problem-action-btn competition-problem-action-btn-danger"
+                                    disabled={
+                                      competitionProblemsUpdating ||
+                                      competitionProblemsDeleting ||
+                                      activeCompetitionId === null
+                                    }
+                                    onClick={() => {
+                                      if (activeCompetitionId === null) return
+                                      void handleUpdateCompetitionProblemStatus(
+                                        activeCompetitionId,
+                                        item.problem_id,
+                                        0,
+                                      )
+                                    }}
+                                  >
+                                    禁用
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="competition-problem-action-btn"
+                                    disabled={
+                                      competitionProblemsUpdating ||
+                                      competitionProblemsDeleting ||
+                                      activeCompetitionId === null
+                                    }
+                                    onClick={() => {
+                                      if (activeCompetitionId === null) return
+                                      void handleUpdateCompetitionProblemStatus(
+                                        activeCompetitionId,
+                                        item.problem_id,
+                                        1,
+                                      )
+                                    }}
+                                  >
+                                    启用
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="competition-problem-action-btn competition-problem-action-btn-danger"
+                                  disabled={
+                                    competitionProblemsUpdating ||
+                                    competitionProblemsDeleting ||
+                                    activeCompetitionId === null
+                                  }
+                                  onClick={() => {
+                                    handleDeleteCompetitionProblem(item)
+                                  }}
+                                >
+                                  {competitionProblemsDeleting &&
+                                  competitionProblemDeletingId === item.problem_id
+                                    ? '删除中…'
+                                    : '删除'}
+                                </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+        </div>
+        {competitionProblemDeleteConfirm && (
+          <div className="admin-modal-overlay">
+            <div className="admin-modal">
+              <div className="admin-modal-title">确认删除</div>
+              <div className="admin-modal-message">
+                确认要删除比赛题目（题目ID: {competitionProblemDeleteConfirm.problem_id}）吗？
+              </div>
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="problem-detail-edit-btn"
+                  disabled={competitionProblemsDeleting}
+                  onClick={() => setCompetitionProblemDeleteConfirm(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="admin-modal-primary-btn"
+                  disabled={competitionProblemsDeleting}
+                  onClick={handleConfirmDeleteCompetitionProblem}
+                >
+                  {competitionProblemsDeleting ? '删除中…' : '确认删除'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {importProblemModalOpen && (
+          <div className="admin-modal-overlay">
+            <div className="admin-modal" style={{ width: '640px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="admin-modal-title">导入题目</div>
+              <div
+                className="admin-modal-message"
+                style={{
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                  marginBottom: '12px',
+                  overflow: 'hidden',
+                }}
+              >
+                {importProblemLoading && <div>正在加载题目列表…</div>}
+                {!importProblemLoading && importProblemError && (
+                  <div>{importProblemError}</div>
+                )}
+                {!importProblemLoading &&
+                  !importProblemError &&
+                  importProblemList.length === 0 && (
+                    <div>暂无可导入的题目</div>
+                  )}
+                {!importProblemLoading &&
+                  !importProblemError &&
+                  importProblemList.length > 0 && (
+                    <div className="competition-admin-list-table competition-problem-list-table import-problem-table">
+                      <div className="competition-admin-list-row competition-admin-list-row-header import-problem-list-row">
+                        <div className="competition-admin-col-select"></div>
+                        <div className="competition-admin-col-id">题目ID</div>
+                        <div className="competition-admin-col-name">题目标题</div>
+                        <div className="competition-admin-col-status">时间限制</div>
+                        <div className="competition-admin-col-actions">内存限制</div>
+                      </div>
+                      <div className="competition-admin-list-body">
+                        {importProblemList.map((item) => {
+                          const isInCompetition = competitionProblemIdSet.has(item.id)
+                          const checkboxTip = isInCompetition
+                            ? '该题目已在当前比赛题目列表中'
+                            : '选择题目'
+                          return (
+                            <div
+                              key={item.id}
+                              className={
+                                'competition-admin-list-row import-problem-list-row' +
+                                (isInCompetition
+                                  ? ' import-problem-list-row-disabled'
+                                  : '')
+                              }
+                            >
+                            <div className="competition-admin-col-select">
+                              <span title={checkboxTip}>
+                                <input
+                                  type="checkbox"
+                                  aria-label={`选择题目 ${item.id}`}
+                                  disabled={
+                                    isInCompetition ||
+                                    importProblemSubmitting
+                                  }
+                                  checked={
+                                    !isInCompetition &&
+                                    selectedImportProblemIds.includes(item.id)
+                                  }
+                                  onChange={() => {
+                                    if (isInCompetition) return
+                                    if (importProblemSubmitting) return
+                                    setSelectedImportProblemIds((prev) =>
+                                      prev.includes(item.id)
+                                        ? prev.filter((id) => id !== item.id)
+                                        : [...prev, item.id],
+                                    )
+                                  }}
+                                />
+                              </span>
+                            </div>
+                            <div className="competition-admin-col-id">
+                              {item.id}
+                            </div>
+                            <div className="competition-admin-col-name">
+                              {item.title}
+                            </div>
+                            <div className="competition-admin-col-status">
+                              {item.time_limit} ms
+                            </div>
+                            <div className="competition-admin-col-actions problem-col-actions">
+                              {item.memory_limit} MB
+                            </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+              </div>
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="problem-detail-edit-btn"
+                  onClick={() => setImportProblemModalOpen(false)}
+                >
+                  关闭
+                </button>
+                <button
+                  type="button"
+                  className="problem-detail-edit-btn import-problem-add-btn"
+                  disabled={
+                    importProblemSubmitting ||
+                    selectedImportProblemIds.filter(
+                      (id) => !competitionProblemIdSet.has(id),
+                    ).length === 0 ||
+                    activeCompetitionId === null
+                  }
+                  onClick={handleAddSelectedImportProblems}
+                >
+                  {importProblemSubmitting ? '添加中…' : '添加'}
+                </button>
+                {importProblemTotal > 0 && (
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setImportProblemPage((page) => Math.max(1, page - 1))
+                      }
+                      disabled={
+                        importProblemPage <= 1 ||
+                        importProblemLoading ||
+                        importProblemSubmitting
+                      }
+                    >
+                      上一页
+                    </button>
+                    <span className="competition-page-info">
+                      第 {importProblemPage} /{' '}
+                      {Math.max(
+                        1,
+                        Math.ceil(importProblemTotal / 10),
+                      )}{' '}
+                      页
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setImportProblemPage((page) =>
+                          Math.min(
+                            Math.max(1, Math.ceil(importProblemTotal / 10)),
+                            page + 1,
+                          ),
+                        )
+                      }
+                      disabled={
+                        importProblemPage >=
+                          Math.max(1, Math.ceil(importProblemTotal / 10)) ||
+                        importProblemLoading ||
+                        importProblemSubmitting
+                      }
+                    >
+                      下一页
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        {competitionAlertOpen && (
+          <div className="admin-modal-overlay">
+            <div className="admin-modal">
+              <div className="admin-modal-title">
+                {competitionAlertTitle || '提示'}
+              </div>
+              <div className="admin-modal-message">{competitionAlertMessage}</div>
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="admin-modal-primary-btn"
+                  onClick={() => setCompetitionAlertOpen(false)}
+                >
+                  知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     )
   }
 
