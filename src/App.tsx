@@ -5,6 +5,7 @@ import DashboardPage from './pages/Dashboard'
 import AdminPage from './pages/Admin'
 import { clearAuthToken, getAuthToken } from './api/http'
 import { fetchUserInfo } from './api/user'
+import { logout } from './api/auth'
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false)
@@ -38,10 +39,16 @@ function App() {
     await initUserFromToken()
   }
 
-  function handleLogout() {
-    clearAuthToken()
-    setLoggedIn(false)
-    setIsAdmin(false)
+  async function handleLogout() {
+    try {
+      await logout()
+    } catch {
+      void 0
+    } finally {
+      clearAuthToken()
+      setLoggedIn(false)
+      setIsAdmin(false)
+    }
   }
 
   if (loggedIn) {

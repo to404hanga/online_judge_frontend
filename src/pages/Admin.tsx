@@ -4,6 +4,7 @@ import { fetchUserInfo, type UserInfo } from '../api/user'
 import AdminProblemSection from '../components/AdminProblemSection'
 import AdminCompetitionSection from '../components/AdminCompetitionSection'
 import AdminUserSection from '../components/AdminUserSection'
+import LoginPage from './Login'
 
 type Props = {
   onLogout: () => void
@@ -51,7 +52,10 @@ export default function AdminPage({ onLogout }: Props) {
     if (section === 'competition') {
       return <AdminCompetitionSection />
     }
-    return <AdminUserSection />
+    if (section === 'user') {
+      return <AdminUserSection currentUsername={user?.username} />
+    }
+    return <LoginPage />
   }
 
   return (
