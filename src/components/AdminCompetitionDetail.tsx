@@ -338,12 +338,7 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                 </div>
               </div>
               <div
-                className={
-                  'problem-detail-actions' +
-                  (!competitionDetailEditing
-                    ? ' competition-detail-actions-left'
-                    : '')
-                }
+                className="problem-detail-actions competition-detail-actions-left"
               >
                 {!competitionDetailEditing && (
                   <button
