@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -20,6 +21,15 @@ import {
   createCompetition,
 } from '../api/competition'
 import { fetchProblemList, type ProblemItem } from '../api/problem'
+import {
+  fetchAdminUserList,
+  addUsersToCompetition,
+  fetchCompetitionUserList,
+  type AdminUserItem,
+  type CompetitionUserItem,
+  type CompetitionUserOrderBy,
+  type UserOrderBy,
+} from '../api/user'
 import AdminCompetitionList from './AdminCompetitionList'
 import AdminCompetitionDetail from './AdminCompetitionDetail'
 import AdminCompetitionAlertModal from './AdminCompetitionAlertModal'
@@ -128,6 +138,211 @@ export default function AdminCompetitionSection() {
   const [competitionAlertTitle, setCompetitionAlertTitle] = useState('')
   const [competitionAlertMessage, setCompetitionAlertMessage] = useState('')
 
+  const [competitionUserModalOpen, setCompetitionUserModalOpen] = useState(false)
+  const [competitionUserList, setCompetitionUserList] = useState<
+    CompetitionUserItem[]
+  >([])
+  const [competitionUserTotal, setCompetitionUserTotal] = useState(0)
+  const [competitionUserPage, setCompetitionUserPage] = useState(1)
+  const [competitionUserPageSize] = useState(10)
+  const [competitionUserLoading, setCompetitionUserLoading] = useState(false)
+  const [competitionUserError, setCompetitionUserError] = useState('')
+  const [competitionUserOrderField, setCompetitionUserOrderField] =
+    useState<CompetitionUserOrderBy>('id')
+  const [competitionUserOrderDesc, setCompetitionUserOrderDesc] = useState(false)
+  const [competitionUserOrderDropdownOpen, setCompetitionUserOrderDropdownOpen] =
+    useState(false)
+  const [competitionUserStatusFilter, setCompetitionUserStatusFilter] = useState<
+    'all' | '0' | '1'
+  >('all')
+  const [competitionUserStatusFilterOpen, setCompetitionUserStatusFilterOpen] =
+    useState(false)
+  const [competitionUserStatusFilterDropUp, setCompetitionUserStatusFilterDropUp] =
+    useState(false)
+  const [competitionUserUsernameFilter, setCompetitionUserUsernameFilter] =
+    useState('')
+  const [competitionUserRealnameFilter, setCompetitionUserRealnameFilter] =
+    useState('')
+  const [competitionUserUsernameFilterInput, setCompetitionUserUsernameFilterInput] =
+    useState('')
+  const [competitionUserRealnameFilterInput, setCompetitionUserRealnameFilterInput] =
+    useState('')
+
+  const [addCompetitionUserModalOpen, setAddCompetitionUserModalOpen] =
+    useState(false)
+  const [addCompetitionUserList, setAddCompetitionUserList] = useState<
+    AdminUserItem[]
+  >([])
+  const [addCompetitionUserTotal, setAddCompetitionUserTotal] = useState(0)
+  const [addCompetitionUserPage, setAddCompetitionUserPage] = useState(1)
+  const [addCompetitionUserPageSize] = useState(10)
+  const [addCompetitionUserLoading, setAddCompetitionUserLoading] =
+    useState(false)
+  const [addCompetitionUserSubmitting, setAddCompetitionUserSubmitting] =
+    useState(false)
+  const [addCompetitionUserError, setAddCompetitionUserError] = useState('')
+  const [addCompetitionUserUsernameFilter, setAddCompetitionUserUsernameFilter] =
+    useState('')
+  const [addCompetitionUserRealnameFilter, setAddCompetitionUserRealnameFilter] =
+    useState('')
+  const [
+    addCompetitionUserUsernameFilterInput,
+    setAddCompetitionUserUsernameFilterInput,
+  ] = useState('')
+  const [
+    addCompetitionUserRealnameFilterInput,
+    setAddCompetitionUserRealnameFilterInput,
+  ] = useState('')
+  const [existingCompetitionUserIds, setExistingCompetitionUserIds] = useState<
+    number[]
+  >([])
+  const [selectedAddCompetitionUserIds, setSelectedAddCompetitionUserIds] =
+    useState<number[]>([])
+
+  const loadAddCompetitionUsers = useCallback(
+    async (page: number, pageSize: number, username: string, realname: string) => {
+      setAddCompetitionUserLoading(true)
+      setAddCompetitionUserError('')
+      try {
+        const orderBy: UserOrderBy = 'id'
+        const desc = false
+        const usernameValue = username.trim().length > 0 ? username.trim() : undefined
+        const realnameValue = realname.trim().length > 0 ? realname.trim() : undefined
+
+        const res = await fetchAdminUserList(
+          page,
+          pageSize,
+          orderBy,
+          desc,
+          usernameValue,
+          realnameValue,
+          0,
+          0,
+        )
+        if (!res.ok || !res.data) {
+          setAddCompetitionUserList([])
+          setAddCompetitionUserTotal(0)
+          setAddCompetitionUserError(res.data?.message ?? '获取用户列表失败')
+          return
+        }
+
+        if (typeof res.data.code === 'number' && res.data.code !== 200) {
+          setAddCompetitionUserList([])
+          setAddCompetitionUserTotal(0)
+          setAddCompetitionUserError(res.data.message ?? '获取用户列表失败')
+          return
+        }
+
+        const raw = res.data as unknown as Record<string, unknown>
+        const data =
+          (raw.data as Record<string, unknown> | undefined) ??
+          (raw as Record<string, unknown>)
+
+        const listCandidate =
+          (data?.list as unknown) ??
+          (data?.user_list as unknown) ??
+          (data?.users as unknown) ??
+          (data?.rows as unknown)
+
+        const list = Array.isArray(listCandidate)
+          ? (listCandidate as AdminUserItem[])
+          : null
+
+        const totalCandidate =
+          (data?.total as unknown) ??
+          (data?.count as unknown) ??
+          (data?.total_count as unknown)
+        const total = typeof totalCandidate === 'number' ? totalCandidate : 0
+
+        if (list) {
+          setAddCompetitionUserList(list)
+          setAddCompetitionUserTotal(total)
+          return
+        }
+
+        const message =
+          typeof raw.message === 'string' ? raw.message.trim().toLowerCase() : ''
+        if (typeof raw.code === 'number' && raw.code === 200 && message === 'success') {
+          setAddCompetitionUserList([])
+          setAddCompetitionUserTotal(0)
+          setAddCompetitionUserError('')
+          return
+        }
+
+        setAddCompetitionUserList([])
+        setAddCompetitionUserTotal(0)
+        setAddCompetitionUserError('获取用户列表失败：响应体缺少用户列表字段')
+      } catch {
+        setAddCompetitionUserList([])
+        setAddCompetitionUserTotal(0)
+        setAddCompetitionUserError('网络错误，请稍后重试')
+      } finally {
+        setAddCompetitionUserLoading(false)
+      }
+    },
+    [],
+  )
+
+  const loadCompetitionUsers = useCallback(
+    async (competitionId: number, page: number) => {
+      setCompetitionUserLoading(true)
+      setCompetitionUserError('')
+      try {
+        const usernameValue =
+          competitionUserUsernameFilter.trim().length > 0
+            ? competitionUserUsernameFilter.trim()
+            : undefined
+        const realnameValue =
+          competitionUserRealnameFilter.trim().length > 0
+            ? competitionUserRealnameFilter.trim()
+            : undefined
+        const statusValue =
+          competitionUserStatusFilter === 'all'
+            ? undefined
+            : Number(competitionUserStatusFilter)
+
+        const res = await fetchCompetitionUserList(
+          competitionId,
+          page,
+          competitionUserPageSize,
+          competitionUserOrderField,
+          competitionUserOrderDesc,
+          usernameValue,
+          realnameValue,
+          statusValue,
+        )
+        if (!res.ok || !res.data || !res.data.data) {
+          setCompetitionUserList([])
+          setCompetitionUserTotal(0)
+          setCompetitionUserError(res.data?.message ?? '获取参赛用户列表失败')
+          return
+        }
+        if (typeof res.data.code === 'number' && res.data.code !== 200) {
+          setCompetitionUserList([])
+          setCompetitionUserTotal(0)
+          setCompetitionUserError(res.data.message ?? '获取参赛用户列表失败')
+          return
+        }
+        setCompetitionUserList(res.data.data.list ?? [])
+        setCompetitionUserTotal(res.data.data.total ?? 0)
+      } catch {
+        setCompetitionUserList([])
+        setCompetitionUserTotal(0)
+        setCompetitionUserError('网络错误，请稍后重试')
+      } finally {
+        setCompetitionUserLoading(false)
+      }
+    },
+    [
+      competitionUserOrderDesc,
+      competitionUserOrderField,
+      competitionUserPageSize,
+      competitionUserRealnameFilter,
+      competitionUserStatusFilter,
+      competitionUserUsernameFilter,
+    ],
+  )
+
   const [createCompetitionModalOpen, setCreateCompetitionModalOpen] =
     useState(false)
   const [createCompetitionName, setCreateCompetitionName] = useState('')
@@ -153,6 +368,36 @@ export default function AdminCompetitionSection() {
     if (!importProblemModalOpen) return
     void loadImportProblemList(importProblemPage)
   }, [importProblemModalOpen, importProblemPage])
+
+  useEffect(() => {
+    if (!competitionUserModalOpen) return
+    if (activeCompetitionId === null) return
+    void loadCompetitionUsers(activeCompetitionId, competitionUserPage)
+  }, [competitionUserModalOpen, activeCompetitionId, competitionUserPage, loadCompetitionUsers])
+
+  useEffect(() => {
+    if (!addCompetitionUserModalOpen) return
+    void loadAddCompetitionUsers(
+      addCompetitionUserPage,
+      addCompetitionUserPageSize,
+      addCompetitionUserUsernameFilter,
+      addCompetitionUserRealnameFilter,
+    )
+  }, [
+    addCompetitionUserModalOpen,
+    addCompetitionUserPage,
+    addCompetitionUserPageSize,
+    addCompetitionUserUsernameFilter,
+    addCompetitionUserRealnameFilter,
+    loadAddCompetitionUsers,
+  ])
+
+  useEffect(() => {
+    if (existingCompetitionUserIds.length === 0) return
+    setSelectedAddCompetitionUserIds((prev) =>
+      prev.filter((id) => !existingCompetitionUserIds.includes(id)),
+    )
+  }, [existingCompetitionUserIds])
 
   useEffect(() => {
     void loadCompetitions(
@@ -191,6 +436,139 @@ export default function AdminCompetitionSection() {
       setCompetitionProblemsError('网络错误，请稍后重试')
     } finally {
       setCompetitionProblemsLoading(false)
+    }
+  }
+
+  const addCompetitionUserAllCurrentPageSelected = (() => {
+    const existingIdSet = new Set(existingCompetitionUserIds)
+    const selectableIds = addCompetitionUserList
+      .map((item) => item.id)
+      .filter((id) => !existingIdSet.has(id))
+    if (selectableIds.length === 0) return false
+    return selectableIds.every((id) => selectedAddCompetitionUserIds.includes(id))
+  })()
+
+  async function loadExistingCompetitionUserIds(competitionId: number) {
+    const pageSize = 100
+    let page = 1
+    const ids: number[] = []
+    for (;;) {
+      const res = await fetchCompetitionUserList(competitionId, page, pageSize, 'id', false)
+      if (!res.ok || !res.data || !res.data.data) {
+        throw new Error(res.data?.message ?? '获取参赛用户列表失败')
+      }
+      if (typeof res.data.code === 'number' && res.data.code !== 200) {
+        throw new Error(res.data.message ?? '获取参赛用户列表失败')
+      }
+      const list = res.data.data.list ?? []
+      ids.push(...list.map((item) => item.user_id))
+      const total = res.data.data.total ?? ids.length
+      if (ids.length >= total || list.length < pageSize) break
+      page += 1
+      if (page > Math.max(1, Math.ceil(total / pageSize)) + 1) break
+    }
+    setExistingCompetitionUserIds(Array.from(new Set(ids)))
+  }
+
+  function openAddCompetitionUserModal() {
+    if (activeCompetitionId === null) return
+    setAddCompetitionUserModalOpen(true)
+    setAddCompetitionUserPage(1)
+    setSelectedAddCompetitionUserIds([])
+    setAddCompetitionUserError('')
+    setExistingCompetitionUserIds(
+      Array.from(new Set(competitionUserList.map((item) => item.user_id))),
+    )
+    void loadExistingCompetitionUserIds(activeCompetitionId).catch((err) => {
+      const message = err instanceof Error ? err.message : '获取参赛用户列表失败'
+      setAddCompetitionUserError(message)
+    })
+  }
+
+  function closeAddCompetitionUserModal() {
+    setAddCompetitionUserModalOpen(false)
+    setAddCompetitionUserError('')
+    setSelectedAddCompetitionUserIds([])
+    setAddCompetitionUserSubmitting(false)
+  }
+
+  function applyAddCompetitionUserSearch() {
+    setAddCompetitionUserUsernameFilter(addCompetitionUserUsernameFilterInput)
+    setAddCompetitionUserRealnameFilter(addCompetitionUserRealnameFilterInput)
+    setAddCompetitionUserPage(1)
+  }
+
+  function resetAddCompetitionUserFilters() {
+    setAddCompetitionUserUsernameFilter('')
+    setAddCompetitionUserRealnameFilter('')
+    setAddCompetitionUserUsernameFilterInput('')
+    setAddCompetitionUserRealnameFilterInput('')
+    setAddCompetitionUserPage(1)
+  }
+
+  function toggleAddCompetitionUserSelected(userId: number) {
+    if (existingCompetitionUserIds.includes(userId)) return
+    setSelectedAddCompetitionUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    )
+  }
+
+  function toggleAddCompetitionUserSelectedAllCurrentPage() {
+    const existingIdSet = new Set(existingCompetitionUserIds)
+    const selectableIds = addCompetitionUserList
+      .map((item) => item.id)
+      .filter((id) => !existingIdSet.has(id))
+    if (selectableIds.length === 0) return
+    if (addCompetitionUserAllCurrentPageSelected) {
+      setSelectedAddCompetitionUserIds((prev) =>
+        prev.filter((id) => !selectableIds.includes(id)),
+      )
+      return
+    }
+    setSelectedAddCompetitionUserIds((prev) => {
+      const next = new Set(prev)
+      selectableIds.forEach((id) => next.add(id))
+      return Array.from(next)
+    })
+  }
+
+  async function confirmAddCompetitionUsers() {
+    if (activeCompetitionId === null) return
+    const candidateIds = selectedAddCompetitionUserIds.filter(
+      (id) => !existingCompetitionUserIds.includes(id),
+    )
+    if (candidateIds.length === 0) return
+    setAddCompetitionUserSubmitting(true)
+    try {
+      const res = await addUsersToCompetition(activeCompetitionId, candidateIds)
+      if (!res.ok || !res.data) {
+        setCompetitionAlertTitle('添加失败')
+        setCompetitionAlertMessage(res.data?.message ?? '添加参赛用户失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+      if (typeof res.data.code === 'number' && res.data.code !== 200) {
+        setCompetitionAlertTitle('添加失败')
+        setCompetitionAlertMessage(res.data.message ?? '添加参赛用户失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+      const insertSuccess = res.data.data?.insert_success ?? 0
+      setCompetitionAlertTitle('添加成功')
+      setCompetitionAlertMessage(`成功添加 ${insertSuccess} 个用户到参赛名单`)
+      setCompetitionAlertOpen(true)
+      closeAddCompetitionUserModal()
+      if (competitionUserModalOpen) {
+        setCompetitionUserPage(1)
+        void loadCompetitionUsers(activeCompetitionId, 1)
+      }
+      void loadExistingCompetitionUserIds(activeCompetitionId).catch(() => {})
+    } catch {
+      setCompetitionAlertTitle('添加失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setAddCompetitionUserSubmitting(false)
     }
   }
 
@@ -335,6 +713,20 @@ export default function AdminCompetitionSection() {
 
   const competitionPageSizeLabel = `${competitionPageSize}`
 
+  const competitionUserOrderLabel =
+    competitionUserOrderField === 'id'
+      ? '按 ID'
+      : competitionUserOrderField === 'username'
+        ? '按学号'
+        : '按姓名'
+
+  const competitionUserStatusFilterLabel =
+    competitionUserStatusFilter === 'all'
+      ? '全部'
+      : competitionUserStatusFilter === '0'
+        ? '正常'
+        : '禁用'
+
   const hasSelectedCompetitions = selectedCompetitionIds.length > 0
   const isAllCurrentPageSelected =
     competitions.length > 0 &&
@@ -350,6 +742,42 @@ export default function AdminCompetitionSection() {
   function applyCompetitionNameSearch() {
     setCompetitionNameFilter(competitionNameFilterInput.trim())
     setCompetitionPage(1)
+  }
+
+  function applyCompetitionUserSearch() {
+    setCompetitionUserUsernameFilter(competitionUserUsernameFilterInput.trim())
+    setCompetitionUserRealnameFilter(competitionUserRealnameFilterInput.trim())
+    setCompetitionUserPage(1)
+    setCompetitionUserOrderDropdownOpen(false)
+    setCompetitionUserStatusFilterOpen(false)
+  }
+
+  function resetCompetitionUserFilters() {
+    setCompetitionUserUsernameFilter('')
+    setCompetitionUserRealnameFilter('')
+    setCompetitionUserUsernameFilterInput('')
+    setCompetitionUserRealnameFilterInput('')
+    setCompetitionUserOrderField('id')
+    setCompetitionUserOrderDesc(false)
+    setCompetitionUserOrderDropdownOpen(false)
+    setCompetitionUserStatusFilter('all')
+    setCompetitionUserStatusFilterOpen(false)
+    setCompetitionUserStatusFilterDropUp(false)
+    setCompetitionUserPage(1)
+  }
+
+  function toggleCompetitionUserStatusFilterOpen(
+    event?: MouseEvent<HTMLButtonElement>,
+  ) {
+    if (!competitionUserStatusFilterOpen && event) {
+      const rect = event.currentTarget.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      const estimatedMenuHeight = 140
+      setCompetitionUserStatusFilterDropUp(spaceBelow < estimatedMenuHeight)
+    }
+
+    setCompetitionUserStatusFilterOpen((open) => !open)
+    setCompetitionUserOrderDropdownOpen(false)
   }
 
   function handleResetFilters() {
@@ -909,6 +1337,16 @@ export default function AdminCompetitionSection() {
     setCompetitionDetailStatusDropdownOpen(false)
   }
 
+  function openCompetitionUserModal() {
+    if (activeCompetitionId === null) return
+    setCompetitionUserPage(1)
+    setCompetitionUserModalOpen(true)
+  }
+
+  function closeCompetitionUserModal() {
+    setCompetitionUserModalOpen(false)
+  }
+
   function handleChangeCreateCompetitionTimezoneOffset(nextOffset: number) {
     const prevOffset = createCompetitionTimezoneOffset
     const startValue = createCompetitionStartLocal.trim()
@@ -955,6 +1393,7 @@ export default function AdminCompetitionSection() {
           competitionDetailHasChanges={competitionDetailHasChanges}
           onBackToList={closeCompetitionDetail}
           onStartEdit={startCompetitionDetailEdit}
+          onOpenCompetitionUserModal={openCompetitionUserModal}
           onCancelEdit={cancelCompetitionDetailEdit}
           onConfirmEdit={handleConfirmCompetitionDetailChanges}
           onChangeNameDraft={setCompetitionDetailNameDraft}
@@ -997,6 +1436,73 @@ export default function AdminCompetitionSection() {
           onToggleImportProblemSelected={toggleImportProblemSelected}
           onAddSelectedImportProblems={handleAddSelectedImportProblems}
           onChangeImportProblemPage={setImportProblemPage}
+
+          competitionUserModalOpen={competitionUserModalOpen}
+          competitionUserList={competitionUserList}
+          competitionUserTotal={competitionUserTotal}
+          competitionUserPage={competitionUserPage}
+          competitionUserPageSize={competitionUserPageSize}
+          competitionUserLoading={competitionUserLoading}
+          competitionUserError={competitionUserError}
+          competitionUserOrderField={competitionUserOrderField}
+          competitionUserOrderDesc={competitionUserOrderDesc}
+          competitionUserOrderLabel={competitionUserOrderLabel}
+          competitionUserOrderDropdownOpen={competitionUserOrderDropdownOpen}
+          competitionUserStatusFilter={competitionUserStatusFilter}
+          competitionUserStatusFilterLabel={competitionUserStatusFilterLabel}
+          competitionUserStatusFilterOpen={competitionUserStatusFilterOpen}
+          competitionUserStatusFilterDropUp={competitionUserStatusFilterDropUp}
+          competitionUserUsernameFilterInput={competitionUserUsernameFilterInput}
+          competitionUserRealnameFilterInput={competitionUserRealnameFilterInput}
+          onChangeCompetitionUserUsernameFilterInput={setCompetitionUserUsernameFilterInput}
+          onChangeCompetitionUserRealnameFilterInput={setCompetitionUserRealnameFilterInput}
+          onApplyCompetitionUserSearch={applyCompetitionUserSearch}
+          onResetCompetitionUserFilters={resetCompetitionUserFilters}
+          onToggleCompetitionUserOrderDropdown={() => {
+            setCompetitionUserOrderDropdownOpen((open) => !open)
+            setCompetitionUserStatusFilterOpen(false)
+          }}
+          onChangeCompetitionUserOrderField={(field) => {
+            setCompetitionUserOrderField(field)
+            setCompetitionUserOrderDropdownOpen(false)
+            setCompetitionUserPage(1)
+          }}
+          onChangeCompetitionUserOrderDesc={(desc) => {
+            setCompetitionUserOrderDesc(desc)
+            setCompetitionUserPage(1)
+          }}
+          onToggleCompetitionUserStatusFilterOpen={toggleCompetitionUserStatusFilterOpen}
+          onChangeCompetitionUserStatusFilter={(value) => {
+            setCompetitionUserStatusFilter(value)
+            setCompetitionUserStatusFilterOpen(false)
+            setCompetitionUserPage(1)
+          }}
+          onCloseCompetitionUserModal={closeCompetitionUserModal}
+          onChangeCompetitionUserPage={setCompetitionUserPage}
+
+          addCompetitionUserModalOpen={addCompetitionUserModalOpen}
+          addCompetitionUserList={addCompetitionUserList}
+          addCompetitionUserTotal={addCompetitionUserTotal}
+          addCompetitionUserPage={addCompetitionUserPage}
+          addCompetitionUserPageSize={addCompetitionUserPageSize}
+          addCompetitionUserLoading={addCompetitionUserLoading}
+          addCompetitionUserSubmitting={addCompetitionUserSubmitting}
+          addCompetitionUserError={addCompetitionUserError}
+          addCompetitionUserUsernameFilterInput={addCompetitionUserUsernameFilterInput}
+          addCompetitionUserRealnameFilterInput={addCompetitionUserRealnameFilterInput}
+          existingCompetitionUserIds={existingCompetitionUserIds}
+          selectedAddCompetitionUserIds={selectedAddCompetitionUserIds}
+          addCompetitionUserAllCurrentPageSelected={addCompetitionUserAllCurrentPageSelected}
+          onOpenAddCompetitionUserModal={openAddCompetitionUserModal}
+          onCloseAddCompetitionUserModal={closeAddCompetitionUserModal}
+          onChangeAddCompetitionUserUsernameFilterInput={setAddCompetitionUserUsernameFilterInput}
+          onChangeAddCompetitionUserRealnameFilterInput={setAddCompetitionUserRealnameFilterInput}
+          onApplyAddCompetitionUserSearch={applyAddCompetitionUserSearch}
+          onResetAddCompetitionUserFilters={resetAddCompetitionUserFilters}
+          onToggleAddCompetitionUserSelected={toggleAddCompetitionUserSelected}
+          onToggleAddCompetitionUserSelectedAllCurrentPage={toggleAddCompetitionUserSelectedAllCurrentPage}
+          onChangeAddCompetitionUserPage={setAddCompetitionUserPage}
+          onConfirmAddCompetitionUsers={confirmAddCompetitionUsers}
         />
       ) : (
         <AdminCompetitionList

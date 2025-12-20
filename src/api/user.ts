@@ -1,4 +1,4 @@
-import { deleteJson, getJson, putJson } from './http'
+import { deleteJson, getJson, postJson, putJson } from './http'
 
 export type UserInfo = {
   username: string
@@ -63,6 +63,83 @@ export type AdminUserActionResponse = {
   code: number
   message: string
   data?: unknown
+}
+
+export async function createAdminUser(username: string, realname: string, role: number) {
+  return postJson<AdminUserActionResponse>('/api/online-judge-controller?cmd=CreateUser', {
+    username,
+    realname,
+    role,
+  })
+}
+
+export type AddUsersToCompetitionResponseData = {
+  insert_success: number
+}
+
+export type AddUsersToCompetitionResponse = {
+  code: number
+  message: string
+  data?: AddUsersToCompetitionResponseData
+}
+
+export async function addUsersToCompetition(
+  competitionId: number,
+  userIdList: number[],
+) {
+  return postJson<AddUsersToCompetitionResponse>(
+    `/api/online-judge-controller?cmd=AddUsersToCompetition&competition_id=${competitionId}`,
+    {
+      user_id_list: userIdList,
+    },
+  )
+}
+
+export type CompetitionUserItem = {
+  id: number
+  competition_id: number
+  user_id: number
+  username: string
+  realname: string
+  status: number
+}
+
+export type CompetitionUserListData = {
+  total: number
+  page: number
+  page_size: number
+  list: CompetitionUserItem[]
+}
+
+export type CompetitionUserListResponse = {
+  code: number
+  message: string
+  data?: CompetitionUserListData
+}
+
+export type CompetitionUserOrderBy = 'id' | 'username' | 'realname'
+
+export async function fetchCompetitionUserList(
+  competitionId: number,
+  page: number,
+  pageSize: number,
+  orderBy: CompetitionUserOrderBy = 'id',
+  desc = false,
+  username?: string,
+  realname?: string,
+  status?: number,
+) {
+  return getJson<CompetitionUserListResponse>('/api/online-judge-controller', {
+    cmd: 'GetCompetitionUserList',
+    competition_id: competitionId,
+    page,
+    page_size: pageSize,
+    order_by: orderBy,
+    desc,
+    username,
+    realname,
+    status,
+  })
 }
 
 export async function disableAdminUser(userId: number) {

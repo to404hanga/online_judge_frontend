@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import {
+  createAdminUser,
   deleteAdminUser,
   disableAdminUser,
   enableAdminUser,
@@ -12,6 +13,7 @@ import AdminUserList from './AdminUserList'
 
 type UserRoleFilter = 'all' | '0' | '1'
 type UserStatusFilter = 'all' | '0' | '1'
+type CreateUserRole = '' | '0' | '1'
 
 type Props = {
   currentUsername?: string
@@ -28,6 +30,13 @@ export default function AdminUserSection({ currentUsername }: Props) {
   const [resetPasswordConfirmUserId, setResetPasswordConfirmUserId] = useState<
     number | null
   >(null)
+  const [createUserModalOpen, setCreateUserModalOpen] = useState(false)
+  const [createUserUsername, setCreateUserUsername] = useState('')
+  const [createUserRealname, setCreateUserRealname] = useState('')
+  const [createUserRole, setCreateUserRole] = useState<CreateUserRole>('')
+  const [createUserRoleDropdownOpen, setCreateUserRoleDropdownOpen] = useState(false)
+  const [createUserSubmitting, setCreateUserSubmitting] = useState(false)
+  const [createUserSubmitError, setCreateUserSubmitError] = useState('')
   const [userPage, setUserPage] = useState(1)
   const [userTotal, setUserTotal] = useState(0)
   const [userPageSize, setUserPageSize] = useState(10)
@@ -195,6 +204,62 @@ export default function AdminUserSection({ currentUsername }: Props) {
     resetPasswordConfirmUserId === null
       ? null
       : users.find((u) => u.id === resetPasswordConfirmUserId) ?? null
+
+  const canConfirmCreateUser =
+    createUserUsername.trim().length > 0 &&
+    createUserRealname.trim().length > 0 &&
+    createUserRole !== ''
+
+  const createUserRoleLabel =
+    createUserRole === ''
+      ? '请选择角色'
+      : createUserRole === '0'
+        ? '普通用户'
+        : '管理员'
+
+  function openCreateUserModal() {
+    setCreateUserUsername('')
+    setCreateUserRealname('')
+    setCreateUserRole('')
+    setCreateUserRoleDropdownOpen(false)
+    setCreateUserSubmitError('')
+    setCreateUserSubmitting(false)
+    setCreateUserModalOpen(true)
+  }
+
+  function closeCreateUserModal() {
+    setCreateUserRoleDropdownOpen(false)
+    setCreateUserModalOpen(false)
+  }
+
+  async function confirmCreateUser() {
+    if (!canConfirmCreateUser || createUserSubmitting) return
+    setCreateUserSubmitError('')
+    setCreateUserSubmitting(true)
+    setCreateUserRoleDropdownOpen(false)
+    try {
+      const res = await createAdminUser(
+        createUserUsername.trim(),
+        createUserRealname.trim(),
+        Number(createUserRole),
+      )
+      if (!res.ok || !res.data) {
+        setCreateUserSubmitError(res.data?.message ?? '创建用户失败')
+        return
+      }
+      if (typeof res.data.code === 'number' && res.data.code !== 200) {
+        setCreateUserSubmitError(res.data.message ?? '创建用户失败')
+        return
+      }
+      setUserNotice('用户已创建')
+      setUserRefreshToken((v) => v + 1)
+      closeCreateUserModal()
+    } catch {
+      setCreateUserSubmitError('网络错误，请稍后重试')
+    } finally {
+      setCreateUserSubmitting(false)
+    }
+  }
 
   function isSelfOperation(userId: number) {
     if (!currentUsername) return false
@@ -366,6 +431,7 @@ export default function AdminUserSection({ currentUsername }: Props) {
         userError={userError}
         userNotice={userNotice}
         currentUsername={currentUsername}
+        onOpenCreateUserModal={openCreateUserModal}
         userPage={userPage}
         userMaxPage={userMaxPage}
         userPageSize={userPageSize}
@@ -419,6 +485,113 @@ export default function AdminUserSection({ currentUsername }: Props) {
         onDeleteUser={handleDeleteUser}
         onResetPassword={handleResetPassword}
       />
+      {createUserModalOpen && (
+        <div className="admin-modal-overlay">
+          <div
+            className="admin-modal"
+            style={{ width: '480px', maxWidth: 'calc(100% - 40px)' }}
+          >
+            <div className="admin-modal-title">添加用户</div>
+            <div className="admin-modal-message">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {createUserSubmitError && (
+                  <div className="competition-error">{createUserSubmitError}</div>
+                )}
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>学号</div>
+                  <input
+                    type="text"
+                    className="problem-detail-input"
+                    value={createUserUsername}
+                    onChange={(e) => setCreateUserUsername(e.target.value)}
+                    placeholder="请输入学号"
+                    disabled={createUserSubmitting}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>姓名</div>
+                  <input
+                    type="text"
+                    className="problem-detail-input"
+                    value={createUserRealname}
+                    onChange={(e) => setCreateUserRealname(e.target.value)}
+                    placeholder="请输入姓名"
+                    disabled={createUserSubmitting}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 4, fontSize: 13 }}>角色</div>
+                  <div className="problem-sort-select-wrapper">
+                    <button
+                      type="button"
+                      className={
+                        'problem-sort-select' +
+                        (createUserRoleDropdownOpen ? ' problem-sort-select-open' : '')
+                      }
+                      onClick={() => setCreateUserRoleDropdownOpen((open) => !open)}
+                      aria-label={createUserRoleLabel}
+                      style={{ textAlign: 'left' }}
+                      disabled={createUserSubmitting}
+                    >
+                      {createUserRoleLabel}
+                    </button>
+                    {createUserRoleDropdownOpen && (
+                      <div className="problem-sort-menu problem-sort-menu-left problem-sort-menu-match-trigger">
+                        <button
+                          type="button"
+                          className={
+                            'problem-sort-menu-item' +
+                            (createUserRole === '0' ? ' problem-sort-menu-item-active' : '')
+                          }
+                          onClick={() => {
+                            setCreateUserRole('0')
+                            setCreateUserRoleDropdownOpen(false)
+                          }}
+                          disabled={createUserSubmitting}
+                        >
+                          普通用户
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            'problem-sort-menu-item' +
+                            (createUserRole === '1' ? ' problem-sort-menu-item-active' : '')
+                          }
+                          onClick={() => {
+                            setCreateUserRole('1')
+                            setCreateUserRoleDropdownOpen(false)
+                          }}
+                          disabled={createUserSubmitting}
+                        >
+                          管理员
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="problem-detail-edit-btn"
+                onClick={closeCreateUserModal}
+                disabled={createUserSubmitting}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="problem-detail-edit-btn import-problem-add-btn"
+                onClick={confirmCreateUser}
+                disabled={!canConfirmCreateUser || createUserSubmitting}
+              >
+                {createUserSubmitting ? '添加中…' : '确认添加'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {deleteConfirmUserId !== null && (
         <div className="admin-modal-overlay">
           <div className="admin-modal">

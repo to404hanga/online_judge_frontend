@@ -8,6 +8,7 @@ type AdminUserListProps = {
   userError: string
   userNotice: string
   currentUsername?: string
+  onOpenCreateUserModal: () => void
   userPage: number
   userMaxPage: number
   userPageSize: number
@@ -57,6 +58,7 @@ export default function AdminUserList(props: AdminUserListProps) {
     userError,
     userNotice,
     currentUsername,
+    onOpenCreateUserModal,
     userPage,
     userMaxPage,
     userPageSize,
@@ -152,6 +154,16 @@ export default function AdminUserList(props: AdminUserListProps) {
                   />
                 </div>
                 <div className="problem-search-input-wrapper">
+                  <button
+                    type="button"
+                    className="problem-search-icon-btn"
+                    onClick={onApplySearch}
+                    disabled={userLoadingForControls}
+                    aria-label="搜索"
+                    title="搜索"
+                  >
+                    🔍
+                  </button>
                   <input
                     type="text"
                     className="problem-search-input"
@@ -428,6 +440,16 @@ export default function AdminUserList(props: AdminUserListProps) {
           </div>
 
           <div className="competition-pagination">
+            <button
+              type="button"
+              className="problem-add-button"
+              onClick={onOpenCreateUserModal}
+              disabled={userLoadingForControls}
+              aria-label="添加用户"
+              title="添加用户"
+            >
+              +
+            </button>
             <div className="problem-page-size-group">
               <span className="problem-page-size-label">每页</span>
               <div className="problem-page-size-select-wrapper">

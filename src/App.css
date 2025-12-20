@@ -372,6 +372,39 @@ body {
   display: inline-block;
 }
 
+.competition-user-status-filter-btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.competition-user-status-filter-btn::after {
+  content: '';
+  border-style: solid;
+  border-width: 4px 4px 0 4px;
+  border-color: currentColor transparent transparent transparent;
+  transform: translateY(1px);
+}
+
+.competition-user-status-filter-btn-open::after {
+  border-width: 0 4px 4px 4px;
+  border-color: transparent transparent currentColor transparent;
+}
+
+.competition-user-status-filter-btn:focus {
+  outline: none;
+}
+
 .problem-sort-select:hover {
   border-color: #c4d1ff;
   background-color: #f9fafb;
@@ -398,12 +431,22 @@ body {
   border: 1px solid #e5e7eb;
   background: #ffffff;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
-  z-index: 10;
+  z-index: 100;
 }
 
 .problem-sort-menu-up {
   top: auto;
   bottom: calc(100% + 4px);
+}
+
+.problem-sort-menu-left {
+  right: auto;
+  left: 0;
+}
+
+.problem-sort-menu-match-trigger {
+  width: 100%;
+  min-width: 0;
 }
 
 .problem-sort-menu-item {
@@ -1358,6 +1401,34 @@ body {
   background: #f9fafb;
   box-shadow: none;
   transform: none;
+}
+
+.competition-user-list-table .competition-admin-list-body {
+  max-height: 50vh;
+}
+
+.competition-user-list-row {
+  grid-template-columns: 200px minmax(0, 1fr) 100px;
+}
+
+.competition-user-list-row > div {
+  text-align: center;
+}
+
+.competition-add-user-table .competition-admin-list-body {
+  max-height: 50vh;
+}
+
+.competition-user-select-row {
+  grid-template-columns: 44px 200px minmax(0, 1fr);
+}
+
+.competition-user-select-row > div {
+  text-align: center;
+}
+
+.competition-user-select-row-disabled {
+  opacity: 0.55;
 }
 
 .import-problem-table .competition-admin-list-body {
