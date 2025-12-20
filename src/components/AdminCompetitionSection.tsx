@@ -24,6 +24,9 @@ import { fetchProblemList, type ProblemItem } from '../api/problem'
 import {
   fetchAdminUserList,
   addUsersToCompetition,
+  addUsersToCompetitionByCsv,
+  disableUsersInCompetition,
+  enableUsersInCompetition,
   fetchCompetitionUserList,
   type AdminUserItem,
   type CompetitionUserItem,
@@ -167,6 +170,8 @@ export default function AdminCompetitionSection() {
     useState('')
   const [competitionUserRealnameFilterInput, setCompetitionUserRealnameFilterInput] =
     useState('')
+  const [competitionUserActionLoadingMap, setCompetitionUserActionLoadingMap] =
+    useState<Record<number, boolean>>({})
 
   const [addCompetitionUserModalOpen, setAddCompetitionUserModalOpen] =
     useState(false)
@@ -179,6 +184,8 @@ export default function AdminCompetitionSection() {
   const [addCompetitionUserLoading, setAddCompetitionUserLoading] =
     useState(false)
   const [addCompetitionUserSubmitting, setAddCompetitionUserSubmitting] =
+    useState(false)
+  const [addCompetitionUserCsvImporting, setAddCompetitionUserCsvImporting] =
     useState(false)
   const [addCompetitionUserError, setAddCompetitionUserError] = useState('')
   const [addCompetitionUserUsernameFilter, setAddCompetitionUserUsernameFilter] =
@@ -490,6 +497,7 @@ export default function AdminCompetitionSection() {
     setAddCompetitionUserError('')
     setSelectedAddCompetitionUserIds([])
     setAddCompetitionUserSubmitting(false)
+    setAddCompetitionUserCsvImporting(false)
   }
 
   function applyAddCompetitionUserSearch() {
@@ -569,6 +577,43 @@ export default function AdminCompetitionSection() {
       setCompetitionAlertOpen(true)
     } finally {
       setAddCompetitionUserSubmitting(false)
+    }
+  }
+
+  async function handleImportAddCompetitionUsersCsv(file: File) {
+    if (activeCompetitionId === null) return
+    if (addCompetitionUserCsvImporting) return
+
+    setAddCompetitionUserCsvImporting(true)
+    try {
+      const res = await addUsersToCompetitionByCsv(activeCompetitionId, file)
+      if (!res.ok || !res.data) {
+        setCompetitionAlertTitle('导入失败')
+        setCompetitionAlertMessage(res.data?.message ?? 'CSV 导入参赛用户失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+      if (typeof res.data.code === 'number' && res.data.code !== 200) {
+        setCompetitionAlertTitle('导入失败')
+        setCompetitionAlertMessage(res.data.message ?? 'CSV 导入参赛用户失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+      const insertSuccess = res.data.data?.insert_success ?? 0
+      setCompetitionAlertTitle('导入成功')
+      setCompetitionAlertMessage(`成功导入 ${insertSuccess} 个用户到参赛名单`)
+      setCompetitionAlertOpen(true)
+      if (competitionUserModalOpen) {
+        setCompetitionUserPage(1)
+        void loadCompetitionUsers(activeCompetitionId, 1)
+      }
+      void loadExistingCompetitionUserIds(activeCompetitionId).catch(() => {})
+    } catch {
+      setCompetitionAlertTitle('导入失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setAddCompetitionUserCsvImporting(false)
     }
   }
 
@@ -778,6 +823,53 @@ export default function AdminCompetitionSection() {
 
     setCompetitionUserStatusFilterOpen((open) => !open)
     setCompetitionUserOrderDropdownOpen(false)
+  }
+
+  async function handleToggleCompetitionUserStatus(
+    userId: number,
+    currentStatus: number,
+  ) {
+    if (activeCompetitionId === null) return
+    if (competitionUserLoading || competitionUserActionLoadingMap[userId]) return
+
+    setCompetitionUserError('')
+    setCompetitionUserActionLoadingMap((prev) => ({ ...prev, [userId]: true }))
+    try {
+      const res =
+        currentStatus === 0
+          ? await disableUsersInCompetition(activeCompetitionId, [userId])
+          : await enableUsersInCompetition(activeCompetitionId, [userId])
+
+      if (!res.ok || !res.data) {
+        const msg = res.data?.message ?? '参赛用户状态更新失败'
+        setCompetitionUserError(msg)
+        setCompetitionAlertTitle('操作失败')
+        setCompetitionAlertMessage(msg)
+        setCompetitionAlertOpen(true)
+        return
+      }
+      if (typeof res.data.code === 'number' && res.data.code !== 200) {
+        const msg = res.data.message ?? '参赛用户状态更新失败'
+        setCompetitionUserError(msg)
+        setCompetitionAlertTitle('操作失败')
+        setCompetitionAlertMessage(msg)
+        setCompetitionAlertOpen(true)
+        return
+      }
+
+      void loadCompetitionUsers(activeCompetitionId, competitionUserPage)
+    } catch {
+      setCompetitionUserError('网络错误，请稍后重试')
+      setCompetitionAlertTitle('操作失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCompetitionUserActionLoadingMap((prev) => {
+        const next = { ...prev }
+        delete next[userId]
+        return next
+      })
+    }
   }
 
   function handleResetFilters() {
@@ -1345,6 +1437,7 @@ export default function AdminCompetitionSection() {
 
   function closeCompetitionUserModal() {
     setCompetitionUserModalOpen(false)
+    setCompetitionUserActionLoadingMap({})
   }
 
   function handleChangeCreateCompetitionTimezoneOffset(nextOffset: number) {
@@ -1454,10 +1547,12 @@ export default function AdminCompetitionSection() {
           competitionUserStatusFilterDropUp={competitionUserStatusFilterDropUp}
           competitionUserUsernameFilterInput={competitionUserUsernameFilterInput}
           competitionUserRealnameFilterInput={competitionUserRealnameFilterInput}
+          competitionUserActionLoadingMap={competitionUserActionLoadingMap}
           onChangeCompetitionUserUsernameFilterInput={setCompetitionUserUsernameFilterInput}
           onChangeCompetitionUserRealnameFilterInput={setCompetitionUserRealnameFilterInput}
           onApplyCompetitionUserSearch={applyCompetitionUserSearch}
           onResetCompetitionUserFilters={resetCompetitionUserFilters}
+          onToggleCompetitionUserStatus={handleToggleCompetitionUserStatus}
           onToggleCompetitionUserOrderDropdown={() => {
             setCompetitionUserOrderDropdownOpen((open) => !open)
             setCompetitionUserStatusFilterOpen(false)
@@ -1487,6 +1582,7 @@ export default function AdminCompetitionSection() {
           addCompetitionUserPageSize={addCompetitionUserPageSize}
           addCompetitionUserLoading={addCompetitionUserLoading}
           addCompetitionUserSubmitting={addCompetitionUserSubmitting}
+          addCompetitionUserCsvImporting={addCompetitionUserCsvImporting}
           addCompetitionUserError={addCompetitionUserError}
           addCompetitionUserUsernameFilterInput={addCompetitionUserUsernameFilterInput}
           addCompetitionUserRealnameFilterInput={addCompetitionUserRealnameFilterInput}
@@ -1495,6 +1591,7 @@ export default function AdminCompetitionSection() {
           addCompetitionUserAllCurrentPageSelected={addCompetitionUserAllCurrentPageSelected}
           onOpenAddCompetitionUserModal={openAddCompetitionUserModal}
           onCloseAddCompetitionUserModal={closeAddCompetitionUserModal}
+          onImportAddCompetitionUsersCsv={handleImportAddCompetitionUsersCsv}
           onChangeAddCompetitionUserUsernameFilterInput={setAddCompetitionUserUsernameFilterInput}
           onChangeAddCompetitionUserRealnameFilterInput={setAddCompetitionUserRealnameFilterInput}
           onApplyAddCompetitionUserSearch={applyAddCompetitionUserSearch}

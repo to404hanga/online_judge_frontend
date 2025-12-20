@@ -1408,11 +1408,17 @@ body {
 }
 
 .competition-user-list-row {
-  grid-template-columns: 200px minmax(0, 1fr) 100px;
+  grid-template-columns: 200px minmax(0, 1fr) 100px 120px;
 }
 
 .competition-user-list-row > div {
   text-align: center;
+}
+
+.competition-user-list-row > .competition-admin-col-status {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .competition-add-user-table .competition-admin-list-body {

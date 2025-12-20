@@ -7,7 +7,7 @@ import type {
   CompetitionUserItem,
   CompetitionUserOrderBy,
 } from '../api/user'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import { useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { formatDateTimeText } from '../utils/datetime'
 import { COMPETITION_TIMEZONE_OPTIONS } from '../utils/competitionTime'
 import {
@@ -95,10 +95,12 @@ type AdminCompetitionDetailProps = {
   competitionUserStatusFilterDropUp: boolean
   competitionUserUsernameFilterInput: string
   competitionUserRealnameFilterInput: string
+  competitionUserActionLoadingMap: Record<number, boolean>
   onChangeCompetitionUserUsernameFilterInput: (value: string) => void
   onChangeCompetitionUserRealnameFilterInput: (value: string) => void
   onApplyCompetitionUserSearch: () => void
   onResetCompetitionUserFilters: () => void
+  onToggleCompetitionUserStatus: (userId: number, currentStatus: number) => void
   onToggleCompetitionUserOrderDropdown: () => void
   onChangeCompetitionUserOrderField: (field: CompetitionUserOrderBy) => void
   onChangeCompetitionUserOrderDesc: (desc: boolean) => void
@@ -116,6 +118,7 @@ type AdminCompetitionDetailProps = {
   addCompetitionUserPageSize: number
   addCompetitionUserLoading: boolean
   addCompetitionUserSubmitting: boolean
+  addCompetitionUserCsvImporting: boolean
   addCompetitionUserError: string
   addCompetitionUserUsernameFilterInput: string
   addCompetitionUserRealnameFilterInput: string
@@ -124,6 +127,7 @@ type AdminCompetitionDetailProps = {
   addCompetitionUserAllCurrentPageSelected: boolean
   onOpenAddCompetitionUserModal: () => void
   onCloseAddCompetitionUserModal: () => void
+  onImportAddCompetitionUsersCsv: (file: File) => void
   onChangeAddCompetitionUserUsernameFilterInput: (value: string) => void
   onChangeAddCompetitionUserRealnameFilterInput: (value: string) => void
   onApplyAddCompetitionUserSearch: () => void
@@ -209,10 +213,12 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     competitionUserStatusFilterDropUp,
     competitionUserUsernameFilterInput,
     competitionUserRealnameFilterInput,
+    competitionUserActionLoadingMap,
     onChangeCompetitionUserUsernameFilterInput,
     onChangeCompetitionUserRealnameFilterInput,
     onApplyCompetitionUserSearch,
     onResetCompetitionUserFilters,
+    onToggleCompetitionUserStatus,
     onToggleCompetitionUserOrderDropdown,
     onChangeCompetitionUserOrderField,
     onChangeCompetitionUserOrderDesc,
@@ -228,6 +234,7 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     addCompetitionUserPageSize,
     addCompetitionUserLoading,
     addCompetitionUserSubmitting,
+    addCompetitionUserCsvImporting,
     addCompetitionUserError,
     addCompetitionUserUsernameFilterInput,
     addCompetitionUserRealnameFilterInput,
@@ -236,6 +243,7 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     addCompetitionUserAllCurrentPageSelected,
     onOpenAddCompetitionUserModal,
     onCloseAddCompetitionUserModal,
+    onImportAddCompetitionUsersCsv,
     onChangeAddCompetitionUserUsernameFilterInput,
     onChangeAddCompetitionUserRealnameFilterInput,
     onApplyAddCompetitionUserSearch,
@@ -245,6 +253,7 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     onChangeAddCompetitionUserPage,
     onConfirmAddCompetitionUsers,
   } = props
+  const addCompetitionUserCsvInputRef = useRef<HTMLInputElement | null>(null)
 
   const competitionProblemIdSet = new Set(
     competitionProblems.map((item) => item.problem_id),
@@ -1096,6 +1105,7 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                           )}
                         </div>
                       </div>
+                      <div className="competition-admin-col-actions">操作</div>
                     </div>
                     <div className="competition-admin-list-body">
                       {competitionUserList.map((item) => (
@@ -1111,6 +1121,28 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                           </div>
                           <div className="competition-admin-col-actions">
                             {renderCompetitionUserStatusPill(item.status)}
+                          </div>
+                          <div className="competition-admin-col-actions">
+                            <div className="user-actions">
+                              <button
+                                type="button"
+                                className={
+                                  'user-action-btn' +
+                                  (item.status === 0 ? ' user-action-btn-danger' : '')
+                                }
+                                onClick={() =>
+                                  onToggleCompetitionUserStatus(item.user_id, item.status)
+                                }
+                                disabled={
+                                  competitionUserLoading ||
+                                  !!competitionUserActionLoadingMap[item.user_id]
+                                }
+                                aria-label={item.status === 0 ? '禁用参赛' : '启用参赛'}
+                                title={item.status === 0 ? '禁用' : '启用'}
+                              >
+                                {item.status === 0 ? '⊘' : '⬤'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1203,7 +1235,7 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                 <button
                   type="button"
                   className="competition-refresh-btn"
-                  style={{ marginRight: 12 }}
+                  style={{ marginRight: 8 }}
                   onClick={onResetAddCompetitionUserFilters}
                   disabled={addCompetitionUserLoading}
                   aria-label="重置筛选并刷新用户列表"
@@ -1211,6 +1243,33 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                 >
                   ↻
                 </button>
+                <button
+                  type="button"
+                  className="competition-refresh-btn"
+                  style={{ marginRight: 12 }}
+                  onClick={() => addCompetitionUserCsvInputRef.current?.click()}
+                  disabled={
+                    addCompetitionUserLoading ||
+                    addCompetitionUserSubmitting ||
+                    addCompetitionUserCsvImporting
+                  }
+                  aria-label="上传CSV导入参赛用户"
+                  title={addCompetitionUserCsvImporting ? '导入中…' : '上传 CSV 导入参赛用户'}
+                >
+                  ⇪
+                </button>
+                <input
+                  ref={addCompetitionUserCsvInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    e.currentTarget.value = ''
+                    if (!file) return
+                    onImportAddCompetitionUsersCsv(file)
+                  }}
+                />
                 <div className="problem-toolbar-right">
                   <div className="problem-search-group">
                     <div className="problem-search-input-wrapper">

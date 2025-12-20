@@ -1,4 +1,4 @@
-import { deleteJson, getJson, postJson, putJson } from './http'
+import { deleteJson, getJson, postFormData, postJson, putJson } from './http'
 
 export type UserInfo = {
   username: string
@@ -93,6 +93,29 @@ export async function addUsersToCompetition(
       user_id_list: userIdList,
     },
   )
+}
+
+export async function addUsersToCompetitionByCsv(competitionId: number, file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  return postFormData<AddUsersToCompetitionResponse>(
+    `/api/online-judge-controller?cmd=AddUsersToCompetition&competition_id=${competitionId}`,
+    body,
+  )
+}
+
+export async function enableUsersInCompetition(competitionId: number, userIdList: number[]) {
+  return putJson<AdminUserActionResponse>('/api/online-judge-controller?cmd=EnableUsersInCompetition', {
+    competition_id: competitionId,
+    user_id_list: userIdList,
+  })
+}
+
+export async function disableUsersInCompetition(competitionId: number, userIdList: number[]) {
+  return putJson<AdminUserActionResponse>('/api/online-judge-controller?cmd=DisableUsersInCompetition', {
+    competition_id: competitionId,
+    user_id_list: userIdList,
+  })
 }
 
 export type CompetitionUserItem = {
