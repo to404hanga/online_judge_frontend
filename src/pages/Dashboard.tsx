@@ -1992,6 +1992,7 @@ export default function DashboardPage({ onLogout }: Props) {
       const isFastest = Boolean(info?.is_fastest)
       const isAccepted = result === 2
       const isTried = result === 1
+      const retriesText = `(${retries})`
 
       const className =
         'oj-rank-cell' +
@@ -2004,10 +2005,10 @@ export default function DashboardPage({ onLogout }: Props) {
               : ' oj-rank-cell-none')
 
       const title = isAccepted
-        ? `通过时间 ${formatDuration(acceptedAt)}，重试 ${retries} 次` +
+        ? `通过时间 ${formatDuration(acceptedAt)}，重试${retriesText}` +
           (isFastest ? '（最快通过）' : '')
         : isTried
-          ? `尝试中，重试 ${retries} 次`
+          ? `尝试中，重试${retriesText}`
           : '未提交'
 
       return (
@@ -2016,13 +2017,13 @@ export default function DashboardPage({ onLogout }: Props) {
             <div className="oj-rank-cell-inner">
               <div className="oj-rank-cell-main">{formatDuration(acceptedAt)}</div>
               <div className="oj-rank-cell-sub">
-                {isFastest ? '最快' : retries > 0 ? `+${retries}` : ''}
+                {isFastest ? `最快 ${retriesText}` : retriesText}
               </div>
             </div>
           ) : isTried ? (
             <div className="oj-rank-cell-inner">
-              <div className="oj-rank-cell-main">{retries > 0 ? `+${retries}` : '尝试'}</div>
-              <div className="oj-rank-cell-sub" />
+              <div className="oj-rank-cell-main">尝试</div>
+              <div className="oj-rank-cell-sub">{retriesText}</div>
             </div>
           ) : (
             <div className="oj-rank-cell-inner">
