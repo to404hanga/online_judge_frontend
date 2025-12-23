@@ -19,6 +19,7 @@ import {
   removeCompetitionProblems,
   updateCompetition,
   createCompetition,
+  initRanking,
 } from '../api/competition'
 import { fetchProblemList, type ProblemItem } from '../api/problem'
 import {
@@ -140,6 +141,8 @@ export default function AdminCompetitionSection() {
   const [competitionAlertOpen, setCompetitionAlertOpen] = useState(false)
   const [competitionAlertTitle, setCompetitionAlertTitle] = useState('')
   const [competitionAlertMessage, setCompetitionAlertMessage] = useState('')
+  const [competitionRankingInitSubmitting, setCompetitionRankingInitSubmitting] =
+    useState(false)
 
   const [competitionUserModalOpen, setCompetitionUserModalOpen] = useState(false)
   const [competitionUserList, setCompetitionUserList] = useState<
@@ -671,6 +674,36 @@ export default function AdminCompetitionSection() {
       if (competitionDetailRequestRef.current === requestId) {
         setCompetitionDetailLoading(false)
       }
+    }
+  }
+
+  async function handleInitRanking() {
+    if (activeCompetitionId === null) return
+    if (competitionRankingInitSubmitting) return
+    setCompetitionRankingInitSubmitting(true)
+    try {
+      const res = await initRanking(activeCompetitionId)
+      if (!res.ok || !res.data) {
+        setCompetitionAlertTitle('初始化失败')
+        setCompetitionAlertMessage(res.data?.message ?? '初始化比赛排行榜失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+      if (typeof res.data.code === 'number' && res.data.code !== 200) {
+        setCompetitionAlertTitle('初始化失败')
+        setCompetitionAlertMessage(res.data.message ?? '初始化比赛排行榜失败')
+        setCompetitionAlertOpen(true)
+        return
+      }
+      setCompetitionAlertTitle('初始化成功')
+      setCompetitionAlertMessage('已触发重建/初始化比赛排行榜')
+      setCompetitionAlertOpen(true)
+    } catch {
+      setCompetitionAlertTitle('初始化失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCompetitionRankingInitSubmitting(false)
     }
   }
 
@@ -1487,6 +1520,8 @@ export default function AdminCompetitionSection() {
           onBackToList={closeCompetitionDetail}
           onStartEdit={startCompetitionDetailEdit}
           onOpenCompetitionUserModal={openCompetitionUserModal}
+          competitionRankingInitSubmitting={competitionRankingInitSubmitting}
+          onInitRanking={handleInitRanking}
           onCancelEdit={cancelCompetitionDetailEdit}
           onConfirmEdit={handleConfirmCompetitionDetailChanges}
           onChangeNameDraft={setCompetitionDetailNameDraft}

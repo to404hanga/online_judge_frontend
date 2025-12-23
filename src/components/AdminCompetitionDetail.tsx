@@ -40,6 +40,8 @@ type AdminCompetitionDetailProps = {
   onBackToList: () => void
   onStartEdit: () => void
   onOpenCompetitionUserModal: () => void
+  competitionRankingInitSubmitting: boolean
+  onInitRanking: () => void
   onCancelEdit: () => void
   onConfirmEdit: () => void
   onChangeNameDraft: (value: string) => void
@@ -163,6 +165,8 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     onBackToList,
     onStartEdit,
     onOpenCompetitionUserModal,
+    competitionRankingInitSubmitting,
+    onInitRanking,
     onCancelEdit,
     onConfirmEdit,
     onChangeNameDraft,
@@ -254,6 +258,15 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     onConfirmAddCompetitionUsers,
   } = props
   const addCompetitionUserCsvInputRef = useRef<HTMLInputElement | null>(null)
+
+  const isCompetitionRunning = (() => {
+    if (!activeCompetition) return false
+    const startAt = new Date(activeCompetition.start_time).getTime()
+    const endAt = new Date(activeCompetition.end_time).getTime()
+    if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return false
+    const now = Date.now()
+    return now >= startAt && now < endAt
+  })()
 
   const competitionProblemIdSet = new Set(
     competitionProblems.map((item) => item.problem_id),
@@ -510,6 +523,21 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                       onClick={onOpenCompetitionUserModal}
                     >
                       查看参赛用户
+                    </button>
+                    <button
+                      type="button"
+                      className="problem-detail-edit-btn"
+                      disabled={
+                        !activeCompetition ||
+                        competitionDetailLoading ||
+                        !!competitionDetailError ||
+                        !isCompetitionRunning ||
+                        competitionRankingInitSubmitting
+                      }
+                      onClick={onInitRanking}
+                      title={!isCompetitionRunning ? '仅比赛进行中可用' : '重建/初始化比赛排行榜'}
+                    >
+                      {competitionRankingInitSubmitting ? '初始化中…' : '重建排行榜'}
                     </button>
                   </>
                 )}

@@ -180,6 +180,20 @@ export async function updateCompetition(body: UpdateCompetitionRequest) {
   )
 }
 
+export type InitRankingResponse = {
+  code: number
+  message: string
+}
+
+export async function initRanking(competitionId: number) {
+  return postJson<InitRankingResponse>(
+    '/api/online-judge-controller?cmd=InitRanking',
+    {
+      competition_id: competitionId,
+    },
+  )
+}
+
 export type UpdateCompetitionProblemStatusResponse = {
   code: number
   message: string
