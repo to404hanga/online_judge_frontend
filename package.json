@@ -10,11 +10,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@astral-sh/ruff-wasm-web": "^0.14.10",
+    "@wasm-fmt/clang-format": "^21.1.7",
+    "@wasm-fmt/gofmt": "^0.5.0",
+    "prettier": "^3.7.4",
+    "prettier-plugin-java": "^2.7.7",
+    "prismjs": "^1.30.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
+    "@types/prismjs": "^1.26.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react-swc": "^3.8.0",

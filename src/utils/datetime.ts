@@ -12,3 +12,12 @@ export function formatDateTimeText(value: string | number | Date) {
   return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`
 }
 
+export function formatDateTimeTextWithMs(value: string | number | Date) {
+  const base = formatDateTimeText(value)
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return base
+  }
+  const ms = String(date.getMilliseconds()).padStart(3, '0')
+  return `${base}.${ms}`
+}

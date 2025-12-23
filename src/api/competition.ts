@@ -1,4 +1,11 @@
-import { deleteJson, getJson, postJson, putJson } from './http'
+import {
+  deleteJson,
+  getJson,
+  getJsonWithHeaders,
+  postJson,
+  postJsonWithHeaders,
+  putJson,
+} from './http'
 
 export type CompetitionItem = {
   id: number
@@ -50,6 +57,32 @@ export type CompetitionProblemListResponse = {
   code: number
   message: string
   data?: CompetitionProblemItem[]
+}
+
+export type UserCompetitionProblemItem = {
+  competition_id: number
+  problem_id: number
+  problem_title: string
+}
+
+export type UserCompetitionProblemListResponse = {
+  code: number
+  message: string
+  data?: UserCompetitionProblemItem[]
+}
+
+export type UserCompetitionProblemDetail = {
+  id: number
+  title: string
+  description: string
+  time_limit: number
+  memory_limit: number
+}
+
+export type UserCompetitionProblemDetailResponse = {
+  code: number
+  message: string
+  data?: UserCompetitionProblemDetail
 }
 
 export type CompetitionOrderBy =
@@ -214,6 +247,162 @@ export async function startCompetition(competitionId: number) {
     '/api/online-judge-controller?cmd=StartCompetition',
     {
       competition_id: competitionId,
+    },
+  )
+}
+
+export type SubmitCompetitionProblemRequest = {
+  code: string
+  language: number
+  problem_id: number
+}
+
+export type SubmitCompetitionProblemResponse = {
+  code: number
+  message: string
+}
+
+export async function submitCompetitionProblem(
+  competitionJwtToken: string,
+  body: SubmitCompetitionProblemRequest,
+) {
+  return postJsonWithHeaders<SubmitCompetitionProblemResponse>(
+    '/api/online-judge-controller?cmd=SubmitCompetitionProblem',
+    body,
+    {
+      'X-Competition-JWT-Token': competitionJwtToken,
+    },
+  )
+}
+
+export async function fetchUserCompetitionProblemList(competitionJwtToken: string) {
+  return getJsonWithHeaders<UserCompetitionProblemListResponse>(
+    '/api/online-judge-controller',
+    {
+      cmd: 'UserGetCompetitionProblemList',
+    },
+    {
+      'X-Competition-JWT-Token': competitionJwtToken,
+    },
+  )
+}
+
+export async function fetchUserCompetitionProblemDetail(
+  competitionJwtToken: string,
+  problemId: number,
+) {
+  return getJsonWithHeaders<UserCompetitionProblemDetailResponse>(
+    '/api/online-judge-controller',
+    {
+      cmd: 'UserGetCompetitionProblemDetail',
+      problem_id: problemId,
+    },
+    {
+      'X-Competition-JWT-Token': competitionJwtToken,
+    },
+  )
+}
+
+export type LatestSubmissionData = {
+  id: number
+  code: string
+  stderr: string
+  language: number
+  status: number
+  result: number
+  time_used: number
+  memory_used: number
+  created_at: string
+}
+
+export type GetLatestSubmissionResponse = {
+  code: number
+  message: string
+  data?: LatestSubmissionData
+}
+
+export async function getLatestSubmission(
+  competitionJwtToken: string,
+  problemId: number,
+) {
+  return getJsonWithHeaders<GetLatestSubmissionResponse>(
+    '/api/online-judge-controller',
+    {
+      cmd: 'GetLatestSubmission',
+      problem_id: problemId,
+    },
+    {
+      'X-Competition-JWT-Token': competitionJwtToken,
+    },
+  )
+}
+
+export type CheckUserCompetitionProblemAcceptedResponse = {
+  code: number
+  message: string
+  data?: boolean
+}
+
+export async function checkUserCompetitionProblemAccepted(
+  competitionJwtToken: string,
+  problemId: number,
+) {
+  return getJsonWithHeaders<CheckUserCompetitionProblemAcceptedResponse>(
+    '/api/online-judge-controller',
+    {
+      cmd: 'CheckUserCompetitionProblemAccepted',
+      problem_id: problemId,
+    },
+    {
+      'X-Competition-JWT-Token': competitionJwtToken,
+    },
+  )
+}
+
+export type CompetitionRankingProblemItem = {
+  problem_id: number
+  result: number
+  accepted_at: number
+  retries: number
+  is_fastest: boolean
+}
+
+export type CompetitionRankingUserItem = {
+  user_id: number
+  username: string
+  realname: string
+  total_accepted: number
+  total_time_used: number
+  problems: CompetitionRankingProblemItem[]
+}
+
+export type CompetitionRankingListData = {
+  total: number
+  page: number
+  page_size: number
+  list: CompetitionRankingUserItem[]
+}
+
+export type GetCompetitionRankingListResponse = {
+  code: number
+  message: string
+  data?: CompetitionRankingListData
+}
+
+export async function fetchCompetitionRankingList(
+  competitionJwtToken: string,
+  page: number,
+  pageSize: number,
+) {
+  return getJsonWithHeaders<GetCompetitionRankingListResponse>(
+    '/api/online-judge-controller',
+    {
+      cmd: 'GetCompetitionRankingList',
+      page,
+      page_size: pageSize,
+    },
+    {
+      'X-Competition-JWT-Token': competitionJwtToken,
     },
   )
 }

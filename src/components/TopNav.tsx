@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 type Props = {
   title: string
@@ -6,6 +6,8 @@ type Props = {
   realname?: string
   onLogout?: () => void
   onTitleClick?: () => void
+  middle?: ReactNode
+  wide?: boolean
 }
 
 function getAvatarChar(realname?: string, username?: string) {
@@ -21,6 +23,8 @@ export default function TopNav({
   realname,
   onLogout,
   onTitleClick,
+  middle,
+  wide,
 }: Props) {
   const avatarChar = getAvatarChar(realname, username)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -53,8 +57,8 @@ export default function TopNav({
   }, [])
 
   return (
-    <header className="top-nav">
-      <div className="top-nav-inner">
+    <header className={'top-nav' + (wide ? ' top-nav-wide' : '')}>
+      <div className={'top-nav-inner' + (wide ? ' top-nav-inner-wide' : '')}>
         <div className="top-nav-left">
           <div
             className="top-nav-title"
@@ -64,6 +68,7 @@ export default function TopNav({
             {title}
           </div>
         </div>
+        {middle && <div className="top-nav-middle">{middle}</div>}
         <div className="top-nav-right">
           {username && (
             <div
