@@ -13,6 +13,7 @@ import {
   type CompetitionItem,
   type CompetitionRankingListData,
   checkUserCompetitionProblemAccepted,
+  connectCompetitionTimeEventStream,
   fetchCompetitionRankingList,
   fetchUserCompetitionProblemDetail,
   fetchUserCompetitionProblemList,
@@ -114,6 +115,77 @@ function formatSubmissionResult(result: number) {
               : result === 6
                 ? 'Memory Limit Exceeded'
                 : 'Output Limit Exceeded'
+}
+
+function normalizeRemainingToMs(value: number) {
+  if (!Number.isFinite(value) || value < 0) return null
+  if (value > 24 * 60 * 60 * 1000) return Math.round(value)
+  return Math.round(value * 1000)
+}
+
+function parseRemainingMs(payload: string) {
+  const text = payload.trim()
+  if (!text) return null
+
+  let jsonRemaining: number | null = null
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (parsed && typeof parsed === 'object') {
+      const v = (parsed as Record<string, unknown>).remaining
+      if (typeof v === 'number') jsonRemaining = normalizeRemainingToMs(v)
+      if (typeof v === 'string') {
+        const num = Number(v)
+        if (Number.isFinite(num)) jsonRemaining = normalizeRemainingToMs(num)
+      }
+    }
+  } catch {
+    jsonRemaining = null
+  }
+  if (jsonRemaining !== null) return jsonRemaining
+
+  const partsMatch = text.match(
+    /remaining\s*[:=]\s*(\d+)\s*:\s*(\d{1,2})\s*:\s*(\d{1,2})\s*:\s*(\d{1,2})/iu,
+  )
+  if (partsMatch) {
+    const days = Number(partsMatch[1])
+    const hours = Number(partsMatch[2])
+    const minutes = Number(partsMatch[3])
+    const seconds = Number(partsMatch[4])
+    if (
+      Number.isFinite(days) &&
+      Number.isFinite(hours) &&
+      Number.isFinite(minutes) &&
+      Number.isFinite(seconds) &&
+      days >= 0 &&
+      hours >= 0 &&
+      minutes >= 0 &&
+      seconds >= 0
+    ) {
+      return (days * 86400 + hours * 3600 + minutes * 60 + seconds) * 1000
+    }
+  }
+
+  const match = text.match(/remaining\s*[:=]\s*(-?\d+(?:\.\d+)?)/iu)
+  if (!match) return null
+  const num = Number(match[1])
+  if (!Number.isFinite(num)) return null
+  return normalizeRemainingToMs(num)
+}
+
+function formatRemainingText(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  if (totalSeconds <= 0) return '0秒'
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const hh = String(hours).padStart(2, '0')
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+  if (days > 0) {
+    return `${days}天${hh}小时${mm}分${ss}秒`
+  }
+  return `${hh}小时${mm}分${ss}秒`
 }
 
 function renderTokenStreamWithSelection(
@@ -530,6 +602,12 @@ export default function DashboardPage({ onLogout }: Props) {
   const [startLoading, setStartLoading] = useState(false)
   const [startError, setStartError] = useState('')
   const [competitionJwtToken, setCompetitionJwtToken] = useState('')
+  const [timeEventStatus, setTimeEventStatus] = useState('')
+  const [remainingBaseMs, setRemainingBaseMs] = useState<number | null>(null)
+  const [remainingSyncAt, setRemainingSyncAt] = useState<number | null>(null)
+  const [competitionEndedModalOpen, setCompetitionEndedModalOpen] = useState(false)
+  const [competitionEndedMessage, setCompetitionEndedMessage] = useState('')
+  const competitionEndedNotifiedRef = useRef(false)
   const [competitionProblems, setCompetitionProblems] = useState<
     UserCompetitionProblemItem[]
   >([])
@@ -998,6 +1076,12 @@ export default function DashboardPage({ onLogout }: Props) {
     setStartError('')
     setStartLoading(false)
     setCompetitionJwtToken('')
+    setTimeEventStatus('')
+    setRemainingBaseMs(null)
+    setRemainingSyncAt(null)
+    competitionEndedNotifiedRef.current = false
+    setCompetitionEndedModalOpen(false)
+    setCompetitionEndedMessage('')
     setCompetitionProblems([])
     setCompetitionProblemsError('')
     setCompetitionProblemsLoading(false)
@@ -1150,12 +1234,110 @@ export default function DashboardPage({ onLogout }: Props) {
       }
       setCompetitionJwtToken(token)
       setView('running')
+      setTimeEventStatus('')
+      setRemainingBaseMs(null)
+      setRemainingSyncAt(null)
+      competitionEndedNotifiedRef.current = false
+      setCompetitionEndedModalOpen(false)
+      setCompetitionEndedMessage('')
     } catch {
       setStartError('网络错误，请稍后重试')
     } finally {
       setStartLoading(false)
     }
   }
+
+  const handleCompetitionEndedAcknowledge = useCallback(() => {
+    setCompetitionEndedModalOpen(false)
+    setCompetitionEndedMessage('')
+    setTimeEventStatus('')
+    setRemainingBaseMs(null)
+    setRemainingSyncAt(null)
+    setCompetitionJwtToken('')
+    setCompetitionProblems([])
+    setCompetitionProblemsError('')
+    setCompetitionProblemsLoading(false)
+    setActiveCompetitionProblemId(null)
+    setCompetitionProblemDetail(null)
+    setCompetitionProblemDetailError('')
+    setCompetitionProblemDetailLoading(false)
+    setCodeDraft('')
+    setProblemAcceptedMap({})
+    setRankingData(null)
+    setRankingError('')
+    setRankingLoading(false)
+    setRankingPage(1)
+    setRankingReloadKey(0)
+    setView('detail')
+  }, [])
+
+  const notifyCompetitionEnded = useCallback((reason?: string) => {
+    if (competitionEndedNotifiedRef.current) return
+    competitionEndedNotifiedRef.current = true
+    setCompetitionEndedMessage((reason || '').trim() || '比赛已结束')
+    setCompetitionEndedModalOpen(true)
+  }, [])
+
+  const competitionSseEnabled =
+    Boolean(competitionJwtToken) && (view === 'running' || view === 'ranking')
+
+  useEffect(() => {
+    if (!competitionSseEnabled) return
+    if (!competitionJwtToken) return
+
+    const controller = new AbortController()
+    setTimeEventStatus('连接中…')
+    void connectCompetitionTimeEventStream(competitionJwtToken, {
+      signal: controller.signal,
+      onMessage: (value) => {
+        const trimmed = value.trim()
+        if (trimmed && trimmed.toLowerCase() === 'closed') {
+          setTimeEventStatus('比赛已结束')
+          notifyCompetitionEnded('比赛已结束')
+          return
+        }
+        const remainingMs = parseRemainingMs(value)
+        if (remainingMs === null) return
+        setRemainingBaseMs(remainingMs)
+        setRemainingSyncAt(Date.now())
+        setTimeEventStatus('')
+      },
+      onError: (err) => {
+        const message =
+          err instanceof Error ? err.message : typeof err === 'string' ? err : '连接失败'
+        setTimeEventStatus(message)
+      },
+    })
+      .then(() => {
+        if (!controller.signal.aborted) {
+          setTimeEventStatus('连接已结束')
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setTimeEventStatus('连接失败')
+        }
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [competitionSseEnabled, competitionJwtToken, notifyCompetitionEnded])
+
+  useEffect(() => {
+    if (!competitionSseEnabled) return
+    if (remainingBaseMs === null || remainingSyncAt === null) return
+    const displayMs = remainingBaseMs - (now - remainingSyncAt)
+    if (displayMs > 0) return
+    setTimeEventStatus('比赛已结束')
+    notifyCompetitionEnded('比赛已结束')
+  }, [
+    competitionSseEnabled,
+    remainingBaseMs,
+    remainingSyncAt,
+    now,
+    notifyCompetitionEnded,
+  ])
 
   useEffect(() => {
     if (view !== 'running') return
@@ -1738,6 +1920,12 @@ export default function DashboardPage({ onLogout }: Props) {
               message="已有任务在队列中，请稍后再试"
               onClose={() => setSubmitQueueModalOpen(false)}
             />
+            <AdminCompetitionAlertModal
+              open={competitionEndedModalOpen}
+              title="提示"
+              message={competitionEndedMessage || '比赛已结束'}
+              onClose={handleCompetitionEndedAcknowledge}
+            />
             {latestSubmissionOpen && (
               <div
                 className="oj-modal-overlay"
@@ -2188,6 +2376,29 @@ export default function DashboardPage({ onLogout }: Props) {
                     结束 {formatDateTimeText(selectedCompetition.end_time)}
                   </span>
                 </div>
+              </div>
+              <div className="oj-nav-countdown">
+                {(() => {
+                  const displayMs =
+                    remainingBaseMs !== null && remainingSyncAt !== null
+                      ? Math.max(0, remainingBaseMs - (now - remainingSyncAt))
+                      : null
+                  return (
+                    <>
+                      <div className="oj-nav-countdown-row">
+                        <div className="oj-nav-countdown-label">距离比赛结束还有</div>
+                        <div className="oj-nav-countdown-time">
+                          {displayMs === null
+                            ? '等待同步…'
+                            : formatRemainingText(displayMs)}
+                        </div>
+                      </div>
+                      {timeEventStatus && (
+                        <div className="oj-nav-countdown-status">{timeEventStatus}</div>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
               <button
                 type="button"

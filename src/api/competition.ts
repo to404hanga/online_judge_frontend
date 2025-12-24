@@ -2,6 +2,8 @@ import {
   deleteJson,
   getJson,
   getJsonWithHeaders,
+  getApiBaseUrl,
+  getAuthToken,
   postJson,
   postJsonWithHeaders,
   putJson,
@@ -419,6 +421,83 @@ export async function fetchCompetitionRankingList(
       'X-Competition-JWT-Token': competitionJwtToken,
     },
   )
+}
+
+export async function connectCompetitionTimeEventStream(
+  competitionJwtToken: string,
+  options: {
+    signal: AbortSignal
+    onMessage: (value: string) => void
+    onError?: (err: unknown) => void
+  },
+): Promise<void> {
+  const url = `${getApiBaseUrl()}/api/online-judge-controller?cmd=TimeEvent`
+  const headers: Record<string, string> = {
+    Accept: 'text/event-stream',
+    'X-Competition-JWT-Token': competitionJwtToken,
+  }
+  const authToken = getAuthToken()
+  if (authToken) headers.Authorization = `Bearer ${authToken}`
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+      mode: 'cors',
+      signal: options.signal,
+    })
+
+    if (!res.ok) {
+      let details = ''
+      try {
+        const text = await res.text()
+        if (text) details = text.length > 800 ? `${text.slice(0, 800)}…` : text
+      } catch {
+        details = ''
+      }
+      throw new Error(
+        `SSE连接失败，状态码: ${res.status}${details ? `，响应: ${details}` : ''}`,
+      )
+    }
+    if (!res.body) {
+      throw new Error('SSE连接失败：响应体为空')
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/gu, '\n')
+
+      let boundaryIndex = buffer.indexOf('\n\n')
+      while (boundaryIndex !== -1) {
+        const rawEvent = buffer.slice(0, boundaryIndex)
+        buffer = buffer.slice(boundaryIndex + 2)
+
+        const lines = rawEvent.split('\n')
+        const dataLines: string[] = []
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).replace(/^\s/gu, ''))
+          }
+        }
+        if (dataLines.length > 0) {
+          options.onMessage(dataLines.join('\n'))
+        }
+
+        boundaryIndex = buffer.indexOf('\n\n')
+      }
+    }
+  } catch (err) {
+    if (options.signal.aborted) return
+    options.onError?.(err)
+    throw err
+  }
 }
 
 export type CreateCompetitionRequest = {

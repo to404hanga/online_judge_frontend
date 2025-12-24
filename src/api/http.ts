@@ -288,6 +288,10 @@ export function getAuthToken(): string | null {
   return getToken()
 }
 
+export function getApiBaseUrl(): string {
+  return API_BASE_URL
+}
+
 export function clearAuthToken() {
   localStorage.removeItem(TOKEN_KEY)
 }

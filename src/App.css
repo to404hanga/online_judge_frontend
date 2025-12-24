@@ -141,6 +141,42 @@ body {
   opacity: 0.6;
 }
 
+.oj-nav-countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  min-width: 140px;
+}
+
+.oj-nav-countdown-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.oj-nav-countdown-label {
+  font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.oj-nav-countdown-time {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.oj-nav-countdown-status {
+  font-size: 11px;
+  color: #ef4444;
+  white-space: nowrap;
+}
+
 .top-nav-right {
   display: flex;
   align-items: center;
@@ -3087,6 +3123,18 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.oj-sse-modal {
+  width: 720px;
+}
+
+.oj-countdown {
+  font-size: 44px;
+  font-weight: 700;
+  color: #111827;
+  text-align: center;
+  letter-spacing: 1px;
 }
 
 .oj-modal-header {
