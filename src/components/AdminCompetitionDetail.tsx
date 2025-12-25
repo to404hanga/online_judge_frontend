@@ -42,6 +42,8 @@ type AdminCompetitionDetailProps = {
   onOpenCompetitionUserModal: () => void
   competitionRankingInitSubmitting: boolean
   onInitRanking: () => void
+  competitionExportSubmitting: boolean
+  onExportCompetitionData: () => void
   onCancelEdit: () => void
   onConfirmEdit: () => void
   onChangeNameDraft: (value: string) => void
@@ -167,6 +169,8 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     onOpenCompetitionUserModal,
     competitionRankingInitSubmitting,
     onInitRanking,
+    competitionExportSubmitting,
+    onExportCompetitionData,
     onCancelEdit,
     onConfirmEdit,
     onChangeNameDraft,
@@ -266,6 +270,13 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
     if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return false
     const now = Date.now()
     return now >= startAt && now < endAt
+  })()
+
+  const isCompetitionEnded = (() => {
+    if (!activeCompetition) return false
+    const endAt = new Date(activeCompetition.end_time).getTime()
+    if (!Number.isFinite(endAt)) return false
+    return Date.now() >= endAt
   })()
 
   const competitionProblemIdSet = new Set(
@@ -531,13 +542,28 @@ export default function AdminCompetitionDetail(props: AdminCompetitionDetailProp
                         !activeCompetition ||
                         competitionDetailLoading ||
                         !!competitionDetailError ||
-                        !isCompetitionRunning ||
-                        competitionRankingInitSubmitting
+                        (isCompetitionEnded
+                          ? competitionExportSubmitting
+                          : !isCompetitionRunning || competitionRankingInitSubmitting)
                       }
-                      onClick={onInitRanking}
-                      title={!isCompetitionRunning ? '仅比赛进行中可用' : '重建/初始化比赛排行榜'}
+                      onClick={
+                        isCompetitionEnded ? onExportCompetitionData : onInitRanking
+                      }
+                      title={
+                        isCompetitionEnded
+                          ? '导出比赛数据'
+                          : !isCompetitionRunning
+                            ? '仅比赛进行中可用'
+                            : '重建/初始化比赛排行榜'
+                      }
                     >
-                      {competitionRankingInitSubmitting ? '初始化中…' : '重建排行榜'}
+                      {isCompetitionEnded
+                        ? competitionExportSubmitting
+                          ? '导出中…'
+                          : '导出比赛数据'
+                        : competitionRankingInitSubmitting
+                          ? '初始化中…'
+                          : '重建排行榜'}
                     </button>
                   </>
                 )}

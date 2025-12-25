@@ -2,6 +2,7 @@ import {
   deleteJson,
   getJson,
   getJsonWithHeaders,
+  getBlobWithHeaders,
   getApiBaseUrl,
   getAuthToken,
   postJson,
@@ -193,6 +194,26 @@ export async function initRanking(competitionId: number) {
     {
       competition_id: competitionId,
     },
+  )
+}
+
+export type ExportCompetitionDataErrorResponse = {
+  code: number
+  message: string
+}
+
+export async function exportCompetitionData(
+  competitionId: number,
+  exportType: number,
+) {
+  return getBlobWithHeaders<ExportCompetitionDataErrorResponse>(
+    '/api/online-judge-controller',
+    {
+      cmd: 'ExportCompetitionData',
+      competition_id: competitionId,
+      export_type: exportType,
+    },
+    {},
   )
 }
 

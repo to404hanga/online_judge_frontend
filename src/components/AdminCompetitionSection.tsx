@@ -20,6 +20,7 @@ import {
   updateCompetition,
   createCompetition,
   initRanking,
+  exportCompetitionData,
 } from '../api/competition'
 import { fetchProblemList, type ProblemItem } from '../api/problem'
 import {
@@ -142,6 +143,8 @@ export default function AdminCompetitionSection() {
   const [competitionAlertTitle, setCompetitionAlertTitle] = useState('')
   const [competitionAlertMessage, setCompetitionAlertMessage] = useState('')
   const [competitionRankingInitSubmitting, setCompetitionRankingInitSubmitting] =
+    useState(false)
+  const [competitionExportSubmitting, setCompetitionExportSubmitting] =
     useState(false)
 
   const [competitionUserModalOpen, setCompetitionUserModalOpen] = useState(false)
@@ -606,6 +609,7 @@ export default function AdminCompetitionSection() {
       setCompetitionAlertTitle('导入成功')
       setCompetitionAlertMessage(`成功导入 ${insertSuccess} 个用户到参赛名单`)
       setCompetitionAlertOpen(true)
+      closeAddCompetitionUserModal()
       if (competitionUserModalOpen) {
         setCompetitionUserPage(1)
         void loadCompetitionUsers(activeCompetitionId, 1)
@@ -704,6 +708,49 @@ export default function AdminCompetitionSection() {
       setCompetitionAlertOpen(true)
     } finally {
       setCompetitionRankingInitSubmitting(false)
+    }
+  }
+
+  function sanitizeFileName(value: string) {
+    return value.replace(/[\\/:*?"<>|]+/gu, '_').trim()
+  }
+
+  async function handleExportCompetitionData() {
+    if (activeCompetitionId === null) return
+    if (competitionExportSubmitting) return
+
+    setCompetitionExportSubmitting(true)
+    try {
+      const exportType: number = 3
+      const res = await exportCompetitionData(activeCompetitionId, exportType)
+
+      if (!res.ok || !res.blob) {
+        setCompetitionAlertTitle('导出失败')
+        setCompetitionAlertMessage(
+          res.data?.message ?? '导出比赛数据失败',
+        )
+        setCompetitionAlertOpen(true)
+        return
+      }
+
+      const ext = exportType === 2 ? 'xlsx' : 'csv'
+      const competitionName = sanitizeFileName(activeCompetition?.name ?? '比赛')
+      const fileName = `${competitionName}_${activeCompetitionId}_${Date.now()}.${ext}`
+
+      const url = URL.createObjectURL(res.blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      setCompetitionAlertTitle('导出失败')
+      setCompetitionAlertMessage('网络错误，请稍后重试')
+      setCompetitionAlertOpen(true)
+    } finally {
+      setCompetitionExportSubmitting(false)
     }
   }
 
@@ -1320,6 +1367,7 @@ export default function AdminCompetitionSection() {
       setCompetitionAlertTitle('添加成功')
       setCompetitionAlertMessage('已添加到比赛题目列表')
       setCompetitionAlertOpen(true)
+      setImportProblemModalOpen(false)
     } catch {
       setCompetitionAlertTitle('添加失败')
       setCompetitionAlertMessage('网络错误，请稍后重试')
@@ -1522,6 +1570,8 @@ export default function AdminCompetitionSection() {
           onOpenCompetitionUserModal={openCompetitionUserModal}
           competitionRankingInitSubmitting={competitionRankingInitSubmitting}
           onInitRanking={handleInitRanking}
+          competitionExportSubmitting={competitionExportSubmitting}
+          onExportCompetitionData={handleExportCompetitionData}
           onCancelEdit={cancelCompetitionDetailEdit}
           onConfirmEdit={handleConfirmCompetitionDetailChanges}
           onChangeNameDraft={setCompetitionDetailNameDraft}

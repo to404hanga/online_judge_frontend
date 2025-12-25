@@ -46,6 +46,7 @@ function handleUnauthorizedRedirect(status: number, data: unknown) {
 export type ApiResult<T> = {
   ok: boolean           // 请求是否成功（HTTP 2xx）
   data: T | null        // 响应体解析出的 JSON 数据
+  blob?: Blob | null    // 响应体解析出的 Blob 数据（用于文件下载等）
   status: number        // HTTP 状态码
   token?: string | null // 从响应头中读取到的 JWT（若存在）
   headers?: Headers     // 原始响应头（用于读取比赛 JWT 等自定义 Header）
@@ -378,6 +379,74 @@ export async function getJsonWithHeaders<T>(
   const result = {
     ok: res.ok,
     data,
+    status: res.status,
+    token: headerToken,
+    headers: res.headers,
+  }
+
+  handleUnauthorizedRedirect(result.status, result.data)
+
+  return result
+}
+
+export async function getBlobWithHeaders<T>(
+  path: string,
+  query: Record<string, string | number | boolean | undefined> | undefined,
+  extraHeaders: Record<string, string>,
+): Promise<ApiResult<T>> {
+  const search = new URLSearchParams()
+  if (query) {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined) return
+      search.append(key, String(value))
+    })
+  }
+  const queryString = search.toString()
+  const url = API_BASE_URL + path + (queryString ? `?${queryString}` : '')
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: buildHeaders({
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    }),
+    credentials: 'include',
+    mode: 'cors',
+  })
+
+  const headerToken = res.headers.get('X-JWT-Token')
+  if (headerToken) setToken(headerToken)
+
+  const contentType = res.headers.get('Content-Type') ?? ''
+
+  let data: T | null = null
+  let blob: Blob | null = null
+
+  if (res.ok) {
+    try {
+      blob = await res.blob()
+    } catch {
+      blob = null
+    }
+  } else if (contentType.includes('application/json')) {
+    try {
+      data = (await res.json()) as T
+    } catch {
+      data = null
+    }
+  } else {
+    try {
+      const text = await res.text()
+      data = (text ? (JSON.parse(text) as T) : null) as T | null
+    } catch {
+      data = null
+    }
+  }
+
+  const result = {
+    ok: res.ok,
+    data,
+    blob,
     status: res.status,
     token: headerToken,
     headers: res.headers,
